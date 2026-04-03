@@ -18,6 +18,55 @@ export function findBestMatch(
   return candidates[result.bestMatchIndex];
 }
 
+/**
+ * Check if a scraped product name is actually relevant to the search term.
+ * Filters out generic pages like "Buy Dental Products Online" or homepages.
+ * Uses both string similarity and keyword overlap.
+ */
+export function isRelevantProduct(
+  searchTerm: string,
+  productName: string
+): boolean {
+  const search = searchTerm.toLowerCase().trim();
+  const product = productName.toLowerCase().trim();
+
+  // Reject obviously generic page titles
+  const genericPatterns = [
+    "buy online",
+    "shop online",
+    "best prices",
+    "free delivery",
+    "b2b medical",
+    "hospital supplies online",
+    "dental equipments, instruments",
+    "dental products online",
+    "home page",
+    "welcome to",
+  ];
+  for (const pattern of genericPatterns) {
+    if (product.includes(pattern)) return false;
+  }
+
+  // Check string similarity — need at least 0.25 to be considered relevant
+  const similarity = stringSimilarity.compareTwoStrings(search, product);
+  if (similarity >= 0.25) return true;
+
+  // Also check keyword overlap — if key words from search appear in product name
+  const searchWords = search
+    .split(/[\s\-,]+/)
+    .filter((w) => w.length > 2)
+    .map((w) => w.toLowerCase());
+  const productWords = product.toLowerCase();
+
+  if (searchWords.length === 0) return false;
+
+  const matchingWords = searchWords.filter((w) => productWords.includes(w));
+  const overlapRatio = matchingWords.length / searchWords.length;
+
+  // At least 40% of meaningful search words should appear in product name
+  return overlapRatio >= 0.4;
+}
+
 export function rankMatches(
   searchTerm: string,
   candidates: ProductData[]

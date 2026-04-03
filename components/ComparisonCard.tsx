@@ -24,7 +24,7 @@ export default function ComparisonCard({
           {config.name}
         </div>
         <div className="text-sm text-slate-muted text-center py-8">
-          Product not found
+          Not available
         </div>
       </div>
     );
@@ -35,11 +35,8 @@ export default function ComparisonCard({
   const isCheaper =
     dentalkartPrice !== undefined && product.price < dentalkartPrice;
 
-  return (
-    <div
-      className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow"
-      style={{ borderTop: `3px solid ${config.color}` }}
-    >
+  const cardContent = (
+    <>
       <div
         className="text-xs font-bold uppercase tracking-wide mb-3"
         style={{ color: config.color }}
@@ -107,6 +104,32 @@ export default function ComparisonCard({
           ★ Cheapest
         </div>
       )}
+    </>
+  );
+
+  if (product.url) {
+    return (
+      <a
+        href={product.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg hover:border-gray-300 transition-all cursor-pointer no-underline"
+        style={{ borderTop: `3px solid ${config.color}` }}
+      >
+        {cardContent}
+        <div className="mt-3 text-xs text-accent font-medium">
+          View on {config.name} ↗
+        </div>
+      </a>
+    );
+  }
+
+  return (
+    <div
+      className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow"
+      style={{ borderTop: `3px solid ${config.color}` }}
+    >
+      {cardContent}
     </div>
   );
 }

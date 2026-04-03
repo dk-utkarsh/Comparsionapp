@@ -1,6 +1,7 @@
 import { ProductData, ComparisonResult, PriceAlert } from "../types";
 import { competitors } from "../competitors";
 import { findBestMatch } from "../matcher";
+import { isRelevantProduct } from "../matcher";
 import { searchDentalkart } from "./dentalkart";
 import { googleSearch, buildSearchQuery } from "./google";
 import { scrapeProductPage } from "./page-scraper";
@@ -38,20 +39,22 @@ export async function compareProduct(
   );
 
   // 4. Scrape each matched competitor product page in parallel
+  // Only keep results that are actually relevant to the search term
   const scrapePromises = Object.entries(competitorUrls).map(
     async ([competitorId, urls]) => {
-      // Try each URL for this competitor until one succeeds
+      // Try each URL for this competitor until one succeeds with a relevant product
       for (const url of urls) {
         const product = await scrapeProductPage(url, competitorId);
-        if (product && product.name && product.price > 0) {
+        if (
+          product &&
+          product.name &&
+          product.price > 0 &&
+          isRelevantProduct(searchName, product.name)
+        ) {
           return { id: competitorId, product };
         }
       }
-      // If no URL produced a good result, try the first one anyway for partial data
-      if (urls.length > 0) {
-        const product = await scrapeProductPage(urls[0], competitorId);
-        return { id: competitorId, product };
-      }
+      // No relevant product found on any URL for this competitor
       return { id: competitorId, product: null };
     }
   );
