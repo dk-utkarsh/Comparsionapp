@@ -9,6 +9,8 @@ export interface ProductData {
   inStock: boolean;
   description: string;
   source: string;
+  packSize: number; // detected pack quantity (1 = single unit)
+  unitPrice: number; // price per single unit
 }
 
 export interface ComparisonResult {

@@ -1,4 +1,5 @@
 import { ProductData } from "../types";
+import { detectPackSize, calculateUnitPrice } from "../pack-detector";
 
 const SEARCH_API_URL =
   "https://apis.dentalkart.com/search/api/v1/query/results";
@@ -122,6 +123,8 @@ function mapProduct(p: DentalkartProduct): ProductData {
       : 0;
 
   const inStock = p.in_stock === 1;
+  const packSize = detectPackSize(name, p.short_description);
+  const unitPrice = calculateUnitPrice(price, packSize);
 
   return {
     name,
@@ -134,5 +137,7 @@ function mapProduct(p: DentalkartProduct): ProductData {
     inStock,
     description: p.short_description || "",
     source: "dentalkart",
+    packSize,
+    unitPrice,
   };
 }

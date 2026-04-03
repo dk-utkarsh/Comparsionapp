@@ -1,7 +1,7 @@
 import { ProductData, ComparisonResult, PriceAlert } from "../types";
 import { competitors } from "../competitors";
-import { findBestMatch } from "../matcher";
-import { isRelevantProduct } from "../matcher";
+import { findBestMatch, isRelevantProduct } from "../matcher";
+import { calculateEquivalentPrice } from "../pack-detector";
 import { searchDentalkart } from "./dentalkart";
 import { googleSearch, buildSearchQuery } from "./google";
 import { scrapeProductPage } from "./page-scraper";
@@ -72,19 +72,31 @@ export async function compareProduct(
     }
   }
 
-  // 5. Generate price alerts
+  // 5. Generate price alerts (pack-size aware)
   const alerts: PriceAlert[] = [];
   if (dentalkart) {
     for (const [compId, compProduct] of Object.entries(competitorResults)) {
-      if (compProduct && compProduct.price > 0 && compProduct.price < dentalkart.price) {
-        const comp = competitors.find((c) => c.id === compId);
-        alerts.push({
-          type: "cheaper_competitor",
-          competitor: comp?.name || compId,
-          competitorPrice: compProduct.price,
-          dentalkartPrice: dentalkart.price,
-          priceDiff: dentalkart.price - compProduct.price,
-        });
+      if (compProduct && compProduct.price > 0) {
+        // Compare using equivalent prices when pack sizes differ
+        const equivalentPrice =
+          compProduct.packSize !== dentalkart.packSize
+            ? calculateEquivalentPrice(
+                compProduct.price,
+                compProduct.packSize,
+                dentalkart.packSize
+              )
+            : compProduct.price;
+
+        if (equivalentPrice < dentalkart.price) {
+          const comp = competitors.find((c) => c.id === compId);
+          alerts.push({
+            type: "cheaper_competitor",
+            competitor: comp?.name || compId,
+            competitorPrice: equivalentPrice,
+            dentalkartPrice: dentalkart.price,
+            priceDiff: dentalkart.price - equivalentPrice,
+          });
+        }
       }
     }
   }

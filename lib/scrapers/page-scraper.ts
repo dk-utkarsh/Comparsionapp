@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { ProductData } from "../types";
+import { detectPackSize, calculateUnitPrice } from "../pack-detector";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -86,6 +87,9 @@ export async function scrapeProductPage(
         ? Math.round(((mrp - price) / mrp) * 100)
         : 0;
 
+    const packSize = detectPackSize(name, description || "");
+    const unitPrice = calculateUnitPrice(price, packSize);
+
     return {
       name,
       url,
@@ -97,6 +101,8 @@ export async function scrapeProductPage(
       inStock,
       description: description || "",
       source,
+      packSize,
+      unitPrice,
     };
   } catch (error) {
     console.error(`Failed to scrape ${url}:`, error);

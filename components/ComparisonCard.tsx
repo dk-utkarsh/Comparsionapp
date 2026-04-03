@@ -6,6 +6,7 @@ interface ComparisonCardProps {
   config: CompetitorConfig | typeof dentalkartConfig;
   isCheapest?: boolean;
   dentalkartPrice?: number;
+  dentalkartPackSize?: number;
 }
 
 export default function ComparisonCard({
@@ -13,6 +14,7 @@ export default function ComparisonCard({
   config,
   isCheapest,
   dentalkartPrice,
+  dentalkartPackSize,
 }: ComparisonCardProps) {
   if (!product) {
     return (
@@ -30,10 +32,24 @@ export default function ComparisonCard({
     );
   }
 
+  // Pack size mismatch detection
+  const hasPackMismatch =
+    dentalkartPackSize !== undefined &&
+    dentalkartPackSize > 0 &&
+    product.packSize > 0 &&
+    product.packSize !== dentalkartPackSize;
+
+  // Calculate equivalent price for fair comparison
+  const equivalentPrice = hasPackMismatch
+    ? Math.round((product.price / product.packSize) * dentalkartPackSize!)
+    : product.price;
+
+  // Compare using equivalent price
+  const comparePrice = hasPackMismatch ? equivalentPrice : product.price;
   const isMoreExpensive =
-    dentalkartPrice !== undefined && product.price > dentalkartPrice;
+    dentalkartPrice !== undefined && comparePrice > dentalkartPrice;
   const isCheaper =
-    dentalkartPrice !== undefined && product.price < dentalkartPrice;
+    dentalkartPrice !== undefined && comparePrice < dentalkartPrice;
 
   const cardContent = (
     <>
@@ -57,6 +73,18 @@ export default function ComparisonCard({
       )}
 
       <div className="text-xs text-slate-muted mb-2 line-clamp-2">{product.name}</div>
+
+      {/* Pack size badge */}
+      {product.packSize > 1 && (
+        <div className="inline-block bg-blue-50 text-accent text-xs font-semibold px-2 py-0.5 rounded mb-2">
+          Pack of {product.packSize}
+        </div>
+      )}
+      {product.packSize === 1 && dentalkartPackSize && dentalkartPackSize > 1 && (
+        <div className="inline-block bg-amber-50 text-amber-600 text-xs font-semibold px-2 py-0.5 rounded mb-2">
+          Single unit
+        </div>
+      )}
 
       <div className="mb-1">
         <span
@@ -85,6 +113,25 @@ export default function ComparisonCard({
           }`}
         >
           {product.discount}% off
+        </div>
+      )}
+
+      {/* Per-unit price */}
+      {product.packSize > 1 && (
+        <div className="text-xs text-slate-muted mt-1">
+          ₹{product.unitPrice.toLocaleString("en-IN")} per unit
+        </div>
+      )}
+
+      {/* Pack mismatch equivalent price */}
+      {hasPackMismatch && (
+        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="text-xs text-amber-700 font-semibold">
+            ⚠ Different pack size
+          </div>
+          <div className="text-xs text-amber-600 mt-0.5">
+            ₹{product.price.toLocaleString("en-IN")} × {dentalkartPackSize! / product.packSize} = ₹{equivalentPrice.toLocaleString("en-IN")} for pack of {dentalkartPackSize}
+          </div>
         </div>
       )}
 
