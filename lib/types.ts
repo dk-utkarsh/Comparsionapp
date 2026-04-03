@@ -42,4 +42,5 @@ export interface CompetitorConfig {
   color: string;
   bgLight: string;
   baseUrl: string;
+  domain: string;
 }
