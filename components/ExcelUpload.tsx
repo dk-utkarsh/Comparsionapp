@@ -66,7 +66,7 @@ export default function ExcelUpload({ onUpload, loading }: ExcelUploadProps) {
   };
 
   return (
-    <div>
+    <>
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -106,6 +106,6 @@ export default function ExcelUpload({ onUpload, loading }: ExcelUploadProps) {
           {error}
         </div>
       )}
-    </div>
+    </>
   );
 }
