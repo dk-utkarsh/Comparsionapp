@@ -5,8 +5,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Dentalkart Quick Compare",
-  description: "Compare dental product prices across competitors",
+  title: "QuickCompare - Dental Product Price Comparison",
+  description:
+    "Compare dental product prices across Dentalkart, Pinkblue, Dentganga, Medikabazar, and Oralkart instantly.",
 };
 
 export default function RootLayout({

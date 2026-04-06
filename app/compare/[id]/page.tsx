@@ -1,20 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ComparisonResult } from "@/lib/types";
-import { competitors, dentalkartConfig } from "@/lib/competitors";
-import ComparisonCard from "@/components/ComparisonCard";
-import PriceAlertBanner from "@/components/PriceAlert";
-import ProgressBar from "@/components/ProgressBar";
+import Header from "@/components/Header";
+import SummaryStats from "@/components/SummaryStats";
+import ComparisonTable from "@/components/ComparisonTable";
 
 export default function ComparePage() {
   const router = useRouter();
   const [results, setResults] = useState<ComparisonResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [products, setProducts] = useState<string[]>([]);
+  const [productStatuses, setProductStatuses] = useState<
+    ("pending" | "loading" | "done" | "error")[]
+  >([]);
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+
     const raw = sessionStorage.getItem("compareQuery");
     if (!raw) {
       router.push("/");
@@ -22,18 +29,26 @@ export default function ComparePage() {
     }
 
     const query = JSON.parse(raw);
-    const products: string[] = query.products;
-    setProgress({ current: 0, total: products.length });
+    const productList: string[] = query.products;
+    setProducts(productList);
+    setProgress({ current: 0, total: productList.length });
+    setProductStatuses(productList.map(() => "pending"));
 
     const fetchResults = async () => {
       const allResults: ComparisonResult[] = [];
 
-      for (let i = 0; i < products.length; i++) {
+      for (let i = 0; i < productList.length; i++) {
+        setProductStatuses((prev) => {
+          const next = [...prev];
+          next[i] = "loading";
+          return next;
+        });
+
         try {
           const response = await fetch("/api/scrape", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ productName: products[i] }),
+            body: JSON.stringify({ productName: productList[i] }),
           });
 
           if (!response.ok) throw new Error("Scrape failed");
@@ -41,18 +56,28 @@ export default function ComparePage() {
           const result: ComparisonResult = await response.json();
           allResults.push(result);
           setResults([...allResults]);
-          setProgress({ current: i + 1, total: products.length });
+          setProgress({ current: i + 1, total: productList.length });
+          setProductStatuses((prev) => {
+            const next = [...prev];
+            next[i] = "done";
+            return next;
+          });
         } catch {
           allResults.push({
             id: crypto.randomUUID(),
-            searchTerm: products[i],
+            searchTerm: productList[i],
             dentalkart: null,
             competitors: {},
             alerts: [],
             createdAt: new Date().toISOString(),
           });
           setResults([...allResults]);
-          setProgress({ current: i + 1, total: products.length });
+          setProgress({ current: i + 1, total: productList.length });
+          setProductStatuses((prev) => {
+            const next = [...prev];
+            next[i] = "error";
+            return next;
+          });
         }
       }
 
@@ -62,7 +87,7 @@ export default function ComparePage() {
     fetchResults();
   }, [router]);
 
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     const response = await fetch("/api/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -76,119 +101,234 @@ export default function ComparePage() {
     a.download = "dentalkart-comparison.xlsx";
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [results]);
 
-  const handleRescrape = async (index: number) => {
-    const product = results[index];
-    const response = await fetch("/api/scrape", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productName: product.searchTerm }),
-    });
-    const updated = await response.json();
-    const newResults = [...results];
-    newResults[index] = updated;
-    setResults(newResults);
-  };
+  const handleRescrape = useCallback(
+    async (index: number) => {
+      const product = results[index];
+      const response = await fetch("/api/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productName: product.searchTerm }),
+      });
+      const updated = await response.json();
+      setResults((prev) => {
+        const next = [...prev];
+        next[index] = updated;
+        return next;
+      });
+    },
+    [results]
+  );
 
-  const getCheapestSource = (result: ComparisonResult): string | null => {
-    const allPrices: { source: string; price: number }[] = [];
-    if (result.dentalkart?.price) {
-      allPrices.push({ source: "dentalkart", price: result.dentalkart.price });
-    }
-    for (const [id, product] of Object.entries(result.competitors)) {
-      if (product?.price) {
-        allPrices.push({ source: id, price: product.price });
+  const handleNewSearch = (productName: string) => {
+    sessionStorage.setItem(
+      "compareQuery",
+      JSON.stringify({ type: "single", products: [productName] })
+    );
+    // Reset state and re-fetch
+    setResults([]);
+    setLoading(true);
+    setProducts([productName]);
+    setProductStatuses(["pending"]);
+    setProgress({ current: 0, total: 1 });
+    fetchedRef.current = false;
+
+    // Trigger re-fetch
+    const fetchSingle = async () => {
+      setProductStatuses(["loading"]);
+      try {
+        const response = await fetch("/api/scrape", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productName }),
+        });
+
+        if (!response.ok) throw new Error("Scrape failed");
+
+        const result: ComparisonResult = await response.json();
+        setResults([result]);
+        setProductStatuses(["done"]);
+      } catch {
+        setResults([
+          {
+            id: crypto.randomUUID(),
+            searchTerm: productName,
+            dentalkart: null,
+            competitors: {},
+            alerts: [],
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+        setProductStatuses(["error"]);
       }
-    }
-    if (allPrices.length === 0) return null;
-    allPrices.sort((a, b) => a.price - b.price);
-    return allPrices[0].source;
+      setProgress({ current: 1, total: 1 });
+      setLoading(false);
+    };
+
+    fetchSingle();
   };
+
+  const percentage =
+    progress.total > 0
+      ? Math.round((progress.current / progress.total) * 100)
+      : 0;
 
   return (
-    <main className="min-h-screen px-4 py-8 max-w-[1100px] mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <button
-            onClick={() => router.push("/")}
-            className="text-sm text-teal hover:underline mb-2 inline-block"
-          >
-            ← Back to search
-          </button>
-          <h1 className="text-xl font-extrabold text-teal">
-            Dentalkart <span className="text-accent">Quick Compare</span>
-          </h1>
-        </div>
-        {results.length > 0 && (
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 bg-teal text-white rounded-lg font-semibold text-sm hover:bg-teal-dark transition-colors"
-          >
-            Export to Excel
-          </button>
+    <div className="min-h-screen flex flex-col bg-mint">
+      <Header onSearch={handleNewSearch} loading={loading} />
+
+      <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6">
+        {/* Progress Section */}
+        {loading && (
+          <div className="mb-6 bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {/* Progress header */}
+            <div className="px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center">
+                    <svg
+                      className="text-teal animate-spin"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-text">
+                      Comparing product {progress.current + (progress.current < progress.total ? 1 : 0)} of{" "}
+                      {progress.total}...
+                    </div>
+                    <div className="text-xs text-slate-muted">
+                      Scraping live prices from all platforms
+                    </div>
+                  </div>
+                </div>
+                <span className="text-sm font-bold text-teal">{percentage}%</span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-teal to-accent rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${percentage}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Product checklist */}
+            {products.length > 1 && (
+              <div className="px-5 py-3 max-h-48 overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                  {products.map((product, i) => {
+                    const status = productStatuses[i];
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs ${
+                          status === "done"
+                            ? "bg-emerald-50 text-success"
+                            : status === "loading"
+                              ? "bg-blue-50 text-accent"
+                              : status === "error"
+                                ? "bg-red-50 text-danger"
+                                : "text-slate-light"
+                        }`}
+                      >
+                        {status === "done" && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                        {status === "loading" && (
+                          <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                          </svg>
+                        )}
+                        {status === "error" && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" x2="6" y1="6" y2="18" />
+                            <line x1="6" x2="18" y1="6" y2="18" />
+                          </svg>
+                        )}
+                        {status === "pending" && (
+                          <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-200" />
+                        )}
+                        <span className="truncate">{product}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         )}
-      </div>
 
-      {loading && (
-        <ProgressBar
-          current={progress.current}
-          total={progress.total}
-        />
-      )}
+        {/* Results Dashboard */}
+        {results.length > 0 && (
+          <>
+            {/* Summary Stats */}
+            <div className="mb-6">
+              <SummaryStats results={results} />
+            </div>
 
-      {results.map((result, index) => {
-        const cheapest = getCheapestSource(result);
-
-        return (
-          <div
-            key={result.id}
-            className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6"
-          >
+            {/* Actions bar */}
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold text-slate-text">
-                {result.searchTerm}
+              <h2 className="text-lg font-bold text-slate-text">
+                Comparison Results
+                {loading && (
+                  <span className="ml-2 text-xs font-normal text-slate-muted">
+                    (updating as results come in...)
+                  </span>
+                )}
               </h2>
               <button
-                onClick={() => handleRescrape(index)}
-                className="text-xs px-3 py-1.5 bg-gray-100 text-slate-muted rounded-lg hover:bg-gray-200 transition-colors"
+                onClick={handleExport}
+                className="flex items-center gap-2 px-4 py-2 bg-teal text-white rounded-lg font-semibold text-sm hover:bg-teal-dark transition-colors shadow-sm"
               >
-                Re-scrape
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" x2="12" y1="15" y2="3" />
+                </svg>
+                Export to Excel
               </button>
             </div>
 
-            {result.alerts.length > 0 && (
-              <div className="mb-4">
-                <PriceAlertBanner alerts={result.alerts} />
-              </div>
-            )}
+            {/* Comparison Table */}
+            <ComparisonTable results={results} onRescrape={handleRescrape} />
+          </>
+        )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              <ComparisonCard
-                product={result.dentalkart}
-                config={dentalkartConfig}
-                isCheapest={cheapest === "dentalkart"}
-              />
-              {competitors.map((comp) => (
-                <ComparisonCard
-                  key={comp.id}
-                  product={result.competitors[comp.id] || null}
-                  config={comp}
-                  isCheapest={cheapest === comp.id}
-                  dentalkartPrice={result.dentalkart?.price}
-                  dentalkartPackSize={result.dentalkart?.packSize}
-                />
-              ))}
+        {/* Empty state */}
+        {!loading && results.length === 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
             </div>
+            <h3 className="text-base font-bold text-slate-text mb-1">
+              No results found
+            </h3>
+            <p className="text-sm text-slate-muted mb-4">
+              Try searching for a different product or upload a new Excel file.
+            </p>
+            <button
+              onClick={() => router.push("/")}
+              className="px-5 py-2 bg-teal text-white rounded-lg font-semibold text-sm hover:bg-teal-dark transition-colors"
+            >
+              Back to Home
+            </button>
           </div>
-        );
-      })}
-
-      {!loading && results.length === 0 && (
-        <div className="text-center py-20 text-slate-muted">
-          No results found. Try a different search.
-        </div>
-      )}
-    </main>
+        )}
+      </main>
+    </div>
   );
 }
