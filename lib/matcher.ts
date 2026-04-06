@@ -47,14 +47,15 @@ export function isRelevantProduct(
     if (product.includes(pattern)) return false;
   }
 
-  // Check string similarity — need at least 0.25 to be considered relevant
-  const similarity = stringSimilarity.compareTwoStrings(search, product);
-  if (similarity >= 0.25) return true;
-
-  // Also check keyword overlap — if key words from search appear in product name
+  // Check keyword overlap — key words from search must appear in product name
+  // Filter out common filler words that don't help matching
+  const fillerWords = new Set([
+    "pack", "of", "set", "for", "with", "and", "the", "pcs", "nos",
+    "dental", "brush", "kit", "unit", "pieces", "combo",
+  ]);
   const searchWords = search
-    .split(/[\s\-,]+/)
-    .filter((w) => w.length > 2)
+    .split(/[\s\-,()]+/)
+    .filter((w) => w.length > 1 && !fillerWords.has(w))
     .map((w) => w.toLowerCase());
   const productWords = product.toLowerCase();
 
@@ -63,8 +64,12 @@ export function isRelevantProduct(
   const matchingWords = searchWords.filter((w) => productWords.includes(w));
   const overlapRatio = matchingWords.length / searchWords.length;
 
-  // At least 40% of meaningful search words should appear in product name
-  return overlapRatio >= 0.4;
+  // The first keyword (usually brand name) MUST appear in the product name
+  if (searchWords.length > 0 && !productWords.includes(searchWords[0])) return false;
+
+  // Need at least 60% keyword overlap OR high string similarity
+  const similarity = stringSimilarity.compareTwoStrings(search, product);
+  return overlapRatio >= 0.6 || similarity >= 0.4;
 }
 
 export function rankMatches(

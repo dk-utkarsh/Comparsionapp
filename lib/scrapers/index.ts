@@ -42,8 +42,10 @@ export async function compareProduct(
   const dentalkartResults = await searchDentalkart(productName);
   const dentalkart = findBestMatch(productName, dentalkartResults);
 
-  // Use the Dentalkart product name if found (more precise for searching)
-  const searchName = dentalkart ? dentalkart.name : productName;
+  // Use the Dentalkart product name if found, but clean it for competitor search
+  // Strip pack/quantity info like "(Pack Of 11)" as it breaks competitor site searches
+  const rawSearchName = dentalkart ? dentalkart.name : productName;
+  const searchName = cleanSearchQuery(rawSearchName);
 
   // 2. Search all competitor sites directly in parallel
   const scrapePromises = competitors.map(async (comp) => {
@@ -121,4 +123,25 @@ export async function compareProduct(
     alerts,
     createdAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Cleans a product name for use as a competitor search query.
+ * Strips pack/quantity info, parenthetical notes, and extra whitespace
+ * that can cause competitor site searches to return no results.
+ *
+ * Examples:
+ *   "Stim Unique Brush (Pack Of 11)" → "Stim Unique Brush"
+ *   "MiK Isolator Kit - 8 Tongue Deflectors" → "MiK Isolator Kit 8 Tongue Deflectors"
+ */
+function cleanSearchQuery(name: string): string {
+  return name
+    // Remove parenthetical pack/quantity info: (Pack Of 11), (Set of 5), (5 Pcs)
+    .replace(/\((?:pack|set|combo|box)\s*(?:of\s*)?\d+\)/gi, "")
+    .replace(/\(\d+\s*(?:pcs|pieces?|units?|nos?|pc)\)/gi, "")
+    // Remove standalone parenthetical notes that might confuse search
+    .replace(/\([^)]{0,20}\)/g, "")
+    // Clean up dashes and extra whitespace
+    .replace(/\s+/g, " ")
+    .trim();
 }
