@@ -59,7 +59,8 @@ const scraperMap: Record<
 function findBestCompetitorMatch(
   searchKeywords: string,
   originalName: string,
-  results: ProductData[]
+  results: ProductData[],
+  reference?: { price: number; packSize: number }
 ): ProductData | null {
   if (results.length === 0) return null;
 
@@ -96,6 +97,17 @@ function findBestCompetitorMatch(
         return null;
       }
 
+      // Price-band sanity: after pack normalization, reject matches whose
+      // price is wildly outside the reference. Huge spreads almost always
+      // mean the match is a different pack/variant/kit, not the same SKU.
+      if (reference && reference.price > 0 && product.price > 0) {
+        const refPack = reference.packSize > 0 ? reference.packSize : 1;
+        const prodPack = product.packSize > 0 ? product.packSize : 1;
+        const equivalent = calculateEquivalentPrice(product.price, prodPack, refPack);
+        const ratio = equivalent / reference.price;
+        if (ratio > 4 || ratio < 0.25) return null;
+      }
+
       // Keyword overlap — use word boundary for each word
       const overlapCount = searchWords.filter((w) => wordBoundary(nameLower, w)).length;
       const overlapScore = overlapCount / searchWords.length;
@@ -130,14 +142,15 @@ function findBestCompetitorMatch(
 async function findOnCompetitor(
   comp: CompetitorConfig,
   originalName: string,
-  query: string
+  query: string,
+  reference?: { price: number; packSize: number }
 ): Promise<ProductData | null> {
   const scraper = scraperMap[comp.id];
   if (!scraper) return null;
 
   try {
     const results = await scraper(query);
-    return findBestCompetitorMatch(query, originalName, results);
+    return findBestCompetitorMatch(query, originalName, results, reference);
   } catch {
     return null;
   }
@@ -212,11 +225,16 @@ export async function compareProduct(
     { timeout: 6000, maxResults: 5 }
   ).catch(() => []);
 
+  // Reference data (DK price + pack size) for post-match price-band sanity.
+  const reference = dentalkart && dentalkart.price > 0
+    ? { price: dentalkart.price, packSize: dentalkart.packSize || 1 }
+    : undefined;
+
   // ROUND 1: Try Q1 (most specific) on ALL competitors in parallel
   const round1 = await Promise.allSettled(
     competitors.map(async (comp) => ({
       id: comp.id,
-      product: await findOnCompetitor(comp, productName, searchQueries[0]),
+      product: await findOnCompetitor(comp, productName, searchQueries[0], reference),
     }))
   );
 
@@ -265,7 +283,7 @@ export async function compareProduct(
       const round2 = await Promise.allSettled(
         stillMissed.map(async (comp) => ({
           id: comp.id,
-          product: await findOnCompetitor(comp, productName, altQ),
+          product: await findOnCompetitor(comp, productName, altQ, reference),
         }))
       );
 

@@ -140,18 +140,79 @@ export function isSmartMatch(
   // ── 15. Tooth number (DLR4 ≠ DUR5) ──
   if (hasToothNumberConflict(search, found)) return false;
 
-  // ── 16. Sufficient keyword overlap (word boundary) ──
+  // ── 16. Configuration / viscosity (Putty+Light Body kit ≠ Light Body alone) ──
+  if (hasConfigurationConflict(search, found)) return false;
+
+  // ── 17. Sufficient keyword overlap (word boundary) ──
   const matchCount = searchWords.filter((w) => wordBoundaryMatch(found, w)).length;
   if (matchCount < 2 && searchWords.length >= 2) return false;
 
   const overlapRatio = matchCount / searchWords.length;
   if (overlapRatio < 0.4) return false;
 
-  // ── 17. String similarity sanity ──
+  // ── 18. String similarity sanity ──
   const similarity = stringSimilarity.compareTwoStrings(search, found);
   if (similarity < 0.15) return false;
 
   return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIGURATION CONFLICT — consumable kits vs single components.
+// Dental impression materials, cements, etc. ship in distinct
+// configurations (viscosity, kit vs refill). Matching a full kit
+// against a single-component tube is a common false positive.
+// ═══════════════════════════════════════════════════════════════
+
+// Viscosity / consistency families. A product mentions at most one.
+const VISCOSITY_VARIANTS: string[][] = [
+  ["light body", "light-body", "light bodied"],
+  ["heavy body", "heavy-body", "heavy bodied"],
+  ["medium body", "medium-body", "regular body", "regular-body"],
+  ["monophase", "mono phase", "mono-phase"],
+  ["putty"],
+  ["wash"],
+  ["tray material"],
+];
+
+function detectViscosityIndices(text: string): Set<number> {
+  const out = new Set<number>();
+  for (let i = 0; i < VISCOSITY_VARIANTS.length; i++) {
+    if (VISCOSITY_VARIANTS[i].some((phrase) => text.includes(phrase))) out.add(i);
+  }
+  return out;
+}
+
+function hasConfigurationConflict(search: string, found: string): boolean {
+  const sVisc = detectViscosityIndices(search);
+  const fVisc = detectViscosityIndices(found);
+
+  // Search is a multi-component kit (e.g. putty + light body). The matched
+  // result must contain every viscosity the search names; otherwise it's
+  // a single-component SKU priced/packed differently.
+  if (sVisc.size >= 2) {
+    for (const idx of sVisc) {
+      if (!fVisc.has(idx)) return true;
+    }
+  }
+
+  // Search is a single viscosity. Matching against a different single
+  // viscosity (heavy vs light body) is a different SKU. Tolerate the case
+  // where the found name lists no viscosity at all (ambiguous generic listing).
+  if (sVisc.size === 1 && fVisc.size >= 1) {
+    const s = [...sVisc][0];
+    if (!fVisc.has(s)) return true;
+  }
+
+  // Refill / kit split — an explicit refill SKU should not match a kit/combo
+  // listing (and vice versa). Only trigger when the marker is unambiguous.
+  const isRefill = (t: string) => /\brefill(s)?\b/.test(t);
+  const isKit = (t: string) => /\b(kit|combo|set|starter)\b/.test(t);
+  if (isRefill(search) !== isRefill(found) && (isKit(search) || isKit(found))) {
+    return true;
+  }
+
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -310,25 +371,26 @@ function hasOrientationConflict(search: string, found: string): boolean {
 }
 
 function hasModelConflict(search: string, found: string): boolean {
+  // Model code pattern: letters + digits, optionally ending in a letter.
+  // Requires total length >= 4 to skip incidental tokens like "H2" or "A1".
   const pattern = /\b([a-z]{1,5}[\-]?\d{2,5}[a-z]?)\b/gi;
-  const sModels = [...search.matchAll(pattern)].map((m) => m[1].toLowerCase().replace(/-/g, ""));
-  const fModels = [...found.matchAll(pattern)].map((m) => m[1].toLowerCase().replace(/-/g, ""));
-  if (sModels.length > 0 && fModels.length > 0) {
-    const hasOverlap = sModels.some((sm) =>
-      fModels.some((fm) => sm === fm || sm.includes(fm) || fm.includes(sm))
-    );
-    if (!hasOverlap) {
-      // Only conflict if same prefix (e.g., sf111 vs sf222)
-      return sModels.some((sm) =>
-        fModels.some((fm) => {
-          const sp = sm.replace(/\d+/g, "");
-          const fp = fm.replace(/\d+/g, "");
-          return sp === fp && sp.length >= 2;
-        })
-      );
-    }
-  }
-  return false;
+  const isRealModel = (t: string) => t.replace(/-/g, "").length >= 4;
+  const sModels = [...search.matchAll(pattern)]
+    .map((m) => m[1].toLowerCase().replace(/-/g, ""))
+    .filter(isRealModel);
+  const fModels = [...found.matchAll(pattern)]
+    .map((m) => m[1].toLowerCase().replace(/-/g, ""))
+    .filter(isRealModel);
+
+  if (sModels.length === 0 || fModels.length === 0) return false;
+
+  // ≥1 model token must appear on both sides. "Contains" still counts so
+  // "x600l" ≈ "x600" (without the L suffix). If no token lines up at all,
+  // the two listings are different variants (e.g. NSK X600L vs NSK Z45L).
+  const hasOverlap = sModels.some((sm) =>
+    fModels.some((fm) => sm === fm || sm.includes(fm) || fm.includes(sm))
+  );
+  return !hasOverlap;
 }
 
 function hasConcentrationConflict(search: string, found: string): boolean {
