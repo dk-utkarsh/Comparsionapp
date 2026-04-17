@@ -37,7 +37,7 @@ export async function scrapeProductPage(
         "Accept-Encoding": "gzip, deflate",
       },
       redirect: "follow",
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(6000),
     });
 
     if (!response.ok) return null;
@@ -87,7 +87,7 @@ export async function scrapeProductPage(
         ? Math.round(((mrp - price) / mrp) * 100)
         : 0;
 
-    const packSize = detectPackSize(name, description || "");
+    const packSize = detectPackSize(name, description || "", url);
     const unitPrice = calculateUnitPrice(price, packSize);
 
     return {

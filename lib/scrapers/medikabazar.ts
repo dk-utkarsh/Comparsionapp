@@ -1,3 +1,4 @@
+import { smartFetch } from "../http";
 import * as cheerio from "cheerio";
 import { ProductData } from "../types";
 import { detectPackSize, calculateUnitPrice } from "../pack-detector";
@@ -31,16 +32,7 @@ export async function searchMedikabazar(
   try {
     const searchUrl = `https://www.medikabazaar.com/products?search=${encodeURIComponent(productName)}`;
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(15000),
-    });
+    const response = await smartFetch(searchUrl);
 
     if (!response.ok) return [];
 
@@ -57,7 +49,7 @@ export async function searchMedikabazar(
 
     if (!Array.isArray(results) || results.length === 0) return [];
 
-    return results.slice(0, 3).map(mapProduct);
+    return results.slice(0, 10).map(mapProduct);
   } catch {
     return [];
   }
@@ -108,7 +100,7 @@ function mapProduct(p: MedikabazaarProduct): ProductData {
       : typeof p.generic_name === "object" && p.generic_name?.name
         ? p.generic_name.name
         : "";
-  const packSize = detectPackSize(name, description);
+  const packSize = detectPackSize(name, description, url);
   const unitPrice = calculateUnitPrice(price, packSize);
 
   return {

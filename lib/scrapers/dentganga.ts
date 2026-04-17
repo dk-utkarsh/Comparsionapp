@@ -1,3 +1,4 @@
+import { smartFetch } from "../http";
 import * as cheerio from "cheerio";
 import { ProductData } from "../types";
 import { detectPackSize, calculateUnitPrice } from "../pack-detector";
@@ -33,16 +34,7 @@ export async function searchDentganga(
   try {
     const searchUrl = `https://www.dentganga.com/search?q=${encodeURIComponent(productName)}`;
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(15000),
-    });
+    const response = await smartFetch(searchUrl);
 
     if (!response.ok) return [];
 
@@ -52,7 +44,7 @@ export async function searchDentganga(
 
     // Each product card is a div.item with grid classes
     $("div.item.col-xl-2, div.item.col-sm-4").each((i, el) => {
-      if (products.length >= 3) return;
+      if (products.length >= 10) return;
 
       const $el = $(el);
       const $cart = $el.find(".product-cart-main").first();
@@ -103,7 +95,7 @@ export async function searchDentganga(
         stockText === "";
 
       const description = "";
-      const packSize = detectPackSize(name, description);
+      const packSize = detectPackSize(name, description, url);
       const unitPrice = calculateUnitPrice(price, packSize);
 
       products.push({

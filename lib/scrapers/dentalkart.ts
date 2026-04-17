@@ -1,3 +1,4 @@
+import { smartFetch } from "../http";
 import { ProductData } from "../types";
 import { detectPackSize, calculateUnitPrice } from "../pack-detector";
 
@@ -35,14 +36,7 @@ export async function searchDentalkart(
 ): Promise<ProductData[]> {
   try {
     const url = `${SEARCH_API_URL}?query=${encodeURIComponent(productName)}&platform=web`;
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-        Origin: "https://www.dentalkart.com",
-        Referer: "https://www.dentalkart.com/",
-      },
-    });
+    const response = await smartFetch(url, { accept: "application/json", skipReferer: true });
 
     if (!response.ok) return [];
 
@@ -95,15 +89,31 @@ function mapProduct(p: DentalkartProduct): ProductData {
   // Product URL
   const productUrl = p.url || (p.url_key ? `https://www.dentalkart.com/${p.url_key}` : "");
 
-  // Image URL - API returns protocol-relative URLs like //images1.dentalkart.com/...
-  const rawImage = p.image_url || p.thumbnail_url || "";
-  const image = rawImage.startsWith("//")
-    ? `https:${rawImage}`
-    : rawImage.startsWith("http")
-      ? rawImage
-      : rawImage
-        ? `https://images1.dentalkart.com${rawImage}`
-        : "";
+  // Image URL — the API can return:
+  //   1. Protocol-relative: //images1.dentalkart.com/... (legacy)
+  //   2. Absolute: https://images1.dentalkart.com/... or https://r2dkmedia... (already fine)
+  //   3. Relative media path: /s/5/s5083-1.jpg or /u/n/untitled.jpg (most common now)
+  // Live CDN is r2dkmedia.dentalkart.com and product media lives under /media/catalog/product.
+  const CDN = "https://r2dkmedia.dentalkart.com";
+  const MEDIA_PREFIX = "/media/catalog/product";
+  const rawImage = (p.image_url || p.thumbnail_url || "").trim();
+  let image = "";
+  if (rawImage) {
+    if (/^https?:\/\//i.test(rawImage)) {
+      image = rawImage.replace(/^https?:\/\/images1\.dentalkart\.com/i, CDN);
+    } else if (rawImage.startsWith("//")) {
+      image = rawImage
+        .replace(/^\/\/images1\.dentalkart\.com/i, CDN)
+        .replace(/^\/\//, "https://");
+    } else if (rawImage.startsWith("/")) {
+      // Relative media path — prepend CDN + /media/catalog/product if not already included.
+      image = rawImage.startsWith(MEDIA_PREFIX)
+        ? `${CDN}${rawImage}`
+        : `${CDN}${MEDIA_PREFIX}${rawImage}`;
+    } else {
+      image = `${CDN}${MEDIA_PREFIX}/${rawImage}`;
+    }
+  }
 
   // Prices
   const price =
@@ -123,7 +133,7 @@ function mapProduct(p: DentalkartProduct): ProductData {
       : 0;
 
   const inStock = p.in_stock === 1;
-  const packSize = detectPackSize(name, p.short_description);
+  const packSize = detectPackSize(name, p.short_description, productUrl);
   const unitPrice = calculateUnitPrice(price, packSize);
 
   return {

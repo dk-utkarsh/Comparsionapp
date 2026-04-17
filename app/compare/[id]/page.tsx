@@ -69,6 +69,7 @@ export default function ComparePage() {
             dentalkart: null,
             competitors: {},
             alerts: [],
+            discovered: [],
             createdAt: new Date().toISOString(),
           });
           setResults([...allResults]);
@@ -157,6 +158,7 @@ export default function ComparePage() {
             dentalkart: null,
             competitors: {},
             alerts: [],
+            discovered: [],
             createdAt: new Date().toISOString(),
           },
         ]);

@@ -10,8 +10,18 @@
  *   - "5 Units", "11 units"
  *   - "Qty: 5", "Quantity: 10"
  */
-export function detectPackSize(name: string, description?: string): number {
-  const text = `${name} ${description || ""}`.toLowerCase();
+export function detectPackSize(name: string, description?: string, url?: string): number {
+  // Check name + description + URL for pack info
+  // URL often contains "pack-of-12" in the slug
+  const urlClean = url ? url.replace(/[-_/]/g, " ") : "";
+  const text = `${name} ${description || ""} ${urlClean}`.toLowerCase();
+
+  // Also check for "Net Quantity X N" pattern (common on Indian sites)
+  const netQtyMatch = text.match(/net\s*(?:quantity|qty)\s*[:\s]*(\d+)\s*n?\b/i);
+  if (netQtyMatch) {
+    const num = parseInt(netQtyMatch[1], 10);
+    if (num >= 2 && num <= 10000) return num;
+  }
 
   const patterns = [
     // "pack of 11", "pack of 5", "(pack of 11)"
@@ -30,14 +40,44 @@ export function detectPackSize(name: string, description?: string): number {
     /(?:qty|quantity)\s*[:\-]?\s*(\d+)/i,
     // "5 nos", "11 nos"
     /(\d+)\s*nos?\b/i,
+    // "100 cases", "50 cases"
+    /(\d+)\s*cases?\b/i,
+    // "50 brackets", "100 brackets"
+    /(\d+)\s*brackets?\b/i,
+    // "20 bags", "100 bags"
+    /(\d+)\s*bags?\b/i,
+    // "12 blades", "10 blades"
+    /(\d+)\s*blades?\b/i,
+    // "6 tips", "10 tips"
+    /(\d+)\s*tips?\b/i,
+    // "5 syringes", "10 syringes"
+    /(\d+)\s*syringes?\b/i,
+    // "5 strips", "10 strips"
+    /(\d+)\s*strips?\b/i,
+    // "100 gloves", "50 gloves"
+    /(\d+)\s*gloves?\b/i,
+    // "10 capsules", "20 capsules"
+    /(\d+)\s*capsules?\b/i,
+    // "5 cartridges"
+    /(\d+)\s*cartridges?\b/i,
+    // "10 refills"
+    /(\d+)\s*refills?\b/i,
+    // "3 tubes"
+    /(\d+)\s*tubes?\b/i,
+    // "5 bottles"
+    /(\d+)\s*bottles?\b/i,
+    // "100 crowns"
+    /(\d+)\s*crowns?\b/i,
+    // "Pk of 10", "Pk 10"
+    /pk\s*(?:of\s*)?(\d+)/i,
   ];
 
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
       const num = parseInt(match[1], 10);
-      // Sanity check: pack size should be between 2 and 500
-      if (num >= 2 && num <= 500) {
+      // Sanity check: pack size should be between 2 and 10000
+      if (num >= 2 && num <= 10000) {
         return num;
       }
     }

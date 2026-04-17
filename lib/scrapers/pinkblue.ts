@@ -1,3 +1,4 @@
+import { smartFetch } from "../http";
 import * as cheerio from "cheerio";
 import { ProductData } from "../types";
 import { detectPackSize, calculateUnitPrice } from "../pack-detector";
@@ -33,16 +34,7 @@ export async function searchPinkblue(
     // Use pinkblue.in without www — www redirects to homepage
     const searchUrl = `https://pinkblue.in/catalogsearch/result/?q=${encodeURIComponent(productName)}`;
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(15000),
-    });
+    const response = await smartFetch(searchUrl);
 
     if (!response.ok) return [];
 
@@ -60,7 +52,7 @@ export async function searchPinkblue(
     const products: ProductData[] = [];
 
     $("li.product-item").each((i, el) => {
-      if (products.length >= 3) return;
+      if (products.length >= 10) return;
 
       const $el = $(el);
       const $info = $el.find(".product-item-info").first();
@@ -125,7 +117,7 @@ export async function searchPinkblue(
       const spec2 = $info.find(".key-speci2").text().trim();
       const description = [spec1, spec2].filter(Boolean).join(". ");
 
-      const packSize = detectPackSize(name, description);
+      const packSize = detectPackSize(name, description, url);
       const unitPrice = calculateUnitPrice(price, packSize);
 
       products.push({

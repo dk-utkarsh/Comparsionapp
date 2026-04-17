@@ -26,7 +26,7 @@ export async function webSearch(query: string): Promise<string[]> {
         "Accept-Encoding": "gzip, deflate",
       },
       redirect: "follow",
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) {

@@ -33,6 +33,22 @@ export const competitors: CompetitorConfig[] = [
     baseUrl: "https://www.oralkart.com",
     domain: "oralkart.com",
   },
+  {
+    id: "dentmark",
+    name: "Dentmark",
+    color: "#ea580c",
+    bgLight: "#fff7ed",
+    baseUrl: "https://www.dentmark.com",
+    domain: "dentmark.com",
+  },
+  {
+    id: "confident-online",
+    name: "Confident",
+    color: "#1976d2",
+    bgLight: "#e3f2fd",
+    baseUrl: "https://www.confidentonline.com",
+    domain: "confidentonline.com",
+  },
 ];
 
 export const dentalkartConfig = {

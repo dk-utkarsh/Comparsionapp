@@ -90,6 +90,29 @@ export default function Header({ onSearch, onUploadClick, loading }: HeaderProps
         {/* Spacer */}
         {isHome && <div className="flex-1" />}
 
+        {/* Primary nav */}
+        <nav className="flex items-center gap-1 shrink-0">
+          {[
+            { href: "/dashboard", label: "Dashboard" },
+            { href: "/monitor", label: "Monitor" },
+          ].map((item) => {
+            const active = pathname === item.href || pathname.startsWith(item.href + "/");
+            return (
+              <button
+                key={item.href}
+                onClick={() => router.push(item.href)}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  active
+                    ? "bg-teal/10 text-teal"
+                    : "text-slate-muted hover:bg-gray-50 hover:text-slate-text"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
         {/* Upload button on non-home pages */}
         {!isHome && onUploadClick && (
           <button

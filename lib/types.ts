@@ -19,6 +19,15 @@ export interface ComparisonResult {
   dentalkart: ProductData | null;
   competitors: Record<string, ProductData | null>;
   alerts: PriceAlert[];
+  discovered: Array<{
+    domain: string;
+    name: string;
+    price: number;
+    mrp: number;
+    url: string;
+    image: string;
+    inStock: boolean;
+  }>;
   createdAt: string;
 }
 

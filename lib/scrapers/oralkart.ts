@@ -1,3 +1,4 @@
+import { smartFetch } from "../http";
 import { ProductData } from "../types";
 import { detectPackSize, calculateUnitPrice } from "../pack-detector";
 
@@ -46,13 +47,7 @@ export async function searchOralkart(
 
     const searchUrl = `https://www.oralkart.com/search/suggest.json?${params.toString()}`;
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(15000),
-    });
+    const response = await smartFetch(searchUrl);
 
     if (!response.ok) return [];
 
@@ -62,7 +57,7 @@ export async function searchOralkart(
 
     if (!Array.isArray(products) || products.length === 0) return [];
 
-    return products.slice(0, 3).map(mapProduct);
+    return Promise.all(products.slice(0, 3).map(mapProduct));
   } catch {
     return [];
   }
@@ -83,7 +78,7 @@ interface ShopifyProduct {
   id?: number;
 }
 
-function mapProduct(p: ShopifyProduct): ProductData {
+async function mapProduct(p: ShopifyProduct): Promise<ProductData> {
   const name = (p.title || "").trim();
 
   // Product URL
@@ -110,8 +105,31 @@ function mapProduct(p: ShopifyProduct): ProductData {
       : 0;
 
   const inStock = p.available !== false;
-  const description = "";
-  const packSize = detectPackSize(name, description);
+  // Shopify suggest API doesn't include pack info. Detect from name + URL.
+  // For accurate pack detection, fetchPackFromProductJson() is called after initial match.
+  let packSize = detectPackSize(name, "", url);
+
+  // If pack not found in name/url, try fetching product.json for variant titles
+  if (packSize === 1 && p.handle) {
+    try {
+      const jsonUrl = `https://www.oralkart.com/products/${p.handle}.json`;
+      const jsonRes = await fetch(jsonUrl, {
+        headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (jsonRes.ok) {
+        const jsonData = await jsonRes.json();
+        const variantText = (jsonData.product?.variants || [])
+          .map((v: { title?: string }) => v.title || "")
+          .join(" ");
+        const bodyText = (jsonData.product?.body_html || "").replace(/<[^>]*>/g, " ");
+        packSize = detectPackSize(name, `${variantText} ${bodyText}`, url);
+      }
+    } catch {
+      // Ignore — keep packSize = 1
+    }
+  }
+
   const unitPrice = calculateUnitPrice(price, packSize);
 
   return {
@@ -123,7 +141,7 @@ function mapProduct(p: ShopifyProduct): ProductData {
     discount,
     packaging: p.vendor || "",
     inStock,
-    description,
+    description: "",
     source: "oralkart",
     packSize,
     unitPrice,
