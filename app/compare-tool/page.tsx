@@ -2,9 +2,10 @@
 
 import { useState, useRef, useCallback } from "react";
 import ComparisonCard from "@/components/ComparisonCard";
+import DiscoveredSellersSection from "@/components/DiscoveredSellersSection";
 import PriceAlertBanner from "@/components/PriceAlert";
 import { competitors, dentalkartConfig } from "@/lib/competitors";
-import { ProductData } from "@/lib/types";
+import { DiscoveredMatch, ProductData } from "@/lib/types";
 
 interface UploadedProduct {
   sku: string;
@@ -30,19 +31,7 @@ interface ScrapeResult {
     dentalkartPrice: number;
     priceDiff: number;
   }>;
-  discovered: Array<{
-    domain: string;
-    name: string;
-    price: number;
-    mrp: number;
-    url: string;
-    image: string;
-    inStock: boolean;
-    verdict?: "confirmed" | "possible" | "variant" | "rejected";
-    confidence?: number;
-    reason?: string;
-    variantDiff?: string;
-  }>;
+  discovered: DiscoveredMatch[];
   elapsed: number;
   error?: string;
 }
@@ -964,36 +953,11 @@ export default function CompareToolPage() {
                         </div>
 
                         {/* Also found on the web — grouped by match confidence */}
-                        {r.discovered && r.discovered.length > 0 && (() => {
-                          const confirmedHits = r.discovered.filter(
-                            (d) => (d.verdict ?? "confirmed") === "confirmed"
-                          );
-                          const possibleHits = r.discovered.filter(
-                            (d) => d.verdict === "possible"
-                          );
-                          const variantHits = r.discovered.filter(
-                            (d) => d.verdict === "variant"
-                          );
-                          return (
-                            <div className="mt-5 pt-4 border-t border-gray-200 space-y-4">
-                              <DiscoveredGroup
-                                title="Also available on the web"
-                                tint="emerald"
-                                items={confirmedHits}
-                              />
-                              <DiscoveredGroup
-                                title="Possibly available (lower confidence)"
-                                tint="amber"
-                                items={possibleHits}
-                              />
-                              <DiscoveredGroup
-                                title="Different variant"
-                                tint="slate"
-                                items={variantHits}
-                              />
-                            </div>
-                          );
-                        })()}
+                        <DiscoveredSellersSection
+                          items={r.discovered}
+                          dentalkartPrice={r.dentalkart?.price}
+                          variant="full"
+                        />
                       </div>
                     )}
                   </div>
@@ -1104,108 +1068,4 @@ function fmtPrice(price: number) {
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(price);
-}
-
-type DiscoveredItem = ScrapeResult["discovered"][number];
-
-const TINT_STYLES: Record<string, { dot: string; title: string; badge: string }> = {
-  emerald: {
-    dot: "bg-emerald-500",
-    title: "text-emerald-700",
-    badge: "bg-emerald-50 text-emerald-700 border border-emerald-100",
-  },
-  amber: {
-    dot: "bg-amber-500",
-    title: "text-amber-700",
-    badge: "bg-amber-50 text-amber-700 border border-amber-100",
-  },
-  slate: {
-    dot: "bg-slate-400",
-    title: "text-slate-600",
-    badge: "bg-slate-50 text-slate-600 border border-slate-200",
-  },
-};
-
-function DiscoveredGroup({
-  title,
-  tint,
-  items,
-}: {
-  title: string;
-  tint: keyof typeof TINT_STYLES;
-  items: DiscoveredItem[];
-}) {
-  if (!items || items.length === 0) return null;
-  const style = TINT_STYLES[tint];
-  return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
-        <span className={`text-sm font-semibold ${style.title}`}>{title}</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded ${style.badge}`}>
-          {items.length}
-        </span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
-        {items.map((d, dIdx) => (
-          <a
-            key={`${d.url}-${dIdx}`}
-            href={d.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-start gap-3 p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all group"
-            title={d.reason || d.name}
-          >
-            {d.image && (
-              <img
-                src={d.image}
-                alt=""
-                className="w-10 h-10 rounded object-contain bg-gray-50 border border-gray-100 shrink-0"
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1 mb-1">
-                <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded bg-blue-50 text-blue-600">
-                  {d.domain}
-                </span>
-                {typeof d.confidence === "number" && d.confidence > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${style.badge}`}>
-                    {Math.round(d.confidence * 100)}%
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-gray-700 truncate group-hover:text-blue-700">
-                {d.name}
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-sm font-bold text-gray-900">{fmtPrice(d.price)}</span>
-                {d.mrp > d.price && (
-                  <span className="text-[10px] text-gray-400 line-through">{fmtPrice(d.mrp)}</span>
-                )}
-                {!d.inStock && (
-                  <span className="text-[10px] text-red-500 font-medium">Out of stock</span>
-                )}
-                {d.variantDiff && (
-                  <span className="text-[10px] text-slate-500 italic">{d.variantDiff}</span>
-                )}
-              </div>
-            </div>
-            <svg
-              className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400 shrink-0 mt-1"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" x2="21" y1="14" y2="3" />
-            </svg>
-          </a>
-        ))}
-      </div>
-    </div>
-  );
 }
