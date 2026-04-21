@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { ComparisonResult } from "@/lib/types";
 import { competitors, dentalkartConfig } from "@/lib/competitors";
 import ComparisonCard from "./ComparisonCard";
+import DiscoveredSellersSection from "./DiscoveredSellersSection";
 import PriceAlertBanner from "./PriceAlert";
 
 interface ComparisonTableProps {
@@ -399,6 +400,11 @@ export default function ComparisonTable({ results, onRescrape }: ComparisonTable
                                 />
                               ))}
                             </div>
+                            <DiscoveredSellersSection
+                              items={result.discovered}
+                              dentalkartPrice={result.dentalkart?.price}
+                              variant="compact"
+                            />
                           </div>
                         </td>
                       </tr>
