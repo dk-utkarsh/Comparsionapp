@@ -235,6 +235,30 @@ export function extractSmartQueries(
     addQuery([code]);
   }
 
+  // Q6: SKU-based search (universal product codes shared across competitors)
+  if (context.sku) {
+    addQuery([brand, context.sku].filter(Boolean));
+    addQuery([context.sku]);
+  }
+
+  // Q7: Product name without brand (some competitor sites don't use brand prefix)
+  if (productLine.length >= 2) {
+    const noBrandParts = [...productLine.slice(0, 3)];
+    if (productType && !noBrandParts.some((p) => p.toLowerCase().includes(typeLower))) {
+      noBrandParts.push(productType);
+    }
+    addQuery(noBrandParts);
+  }
+
+  // Q8: Just model/series name (e.g., "Protaper Universal", "Vicryl Plus")
+  // Pick 1-2 meaningful product line words that look like a model/series
+  if (productLine.length >= 1) {
+    const seriesName = productLine.slice(0, 2).join(" ");
+    if (seriesName.length >= 4) {
+      addQuery([seriesName]);
+    }
+  }
+
   // Fallback: first 3-4 meaningful words from name
   if (queries.length === 0) {
     const fallback = nameWords

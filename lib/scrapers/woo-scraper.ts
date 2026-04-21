@@ -41,7 +41,7 @@ export function createWooScraper(
       const minorUnit = products[0]?.prices?.currency_minor_unit ?? 0;
 
       return products
-        .slice(0, 3)
+        .slice(0, 10)
         .map((p) => mapWooProduct(p, source, minorUnit))
         .filter((p) => p.price > 0);
     } catch {

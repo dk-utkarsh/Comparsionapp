@@ -34,7 +34,7 @@ export async function searchDentalAvenue(
 
     if (!Array.isArray(products) || products.length === 0) return [];
 
-    return products.slice(0, 3).map(mapProduct);
+    return products.slice(0, 10).map(mapProduct);
   } catch {
     return [];
   }

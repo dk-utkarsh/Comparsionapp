@@ -45,7 +45,7 @@ export async function searchDentalkart(
 
     if (!Array.isArray(hits) || hits.length === 0) return [];
 
-    return hits.slice(0, 3).map(mapProduct);
+    return hits.slice(0, 5).map(mapProduct);
   } catch {
     return [];
   }
@@ -81,6 +81,9 @@ interface DentalkartProduct {
   in_stock?: number;
   short_description?: string;
   manufacturer?: string;
+  sku?: string;
+  packaging_contents?: string;
+  categories?: string[];
 }
 
 function mapProduct(p: DentalkartProduct): ProductData {
@@ -136,6 +139,9 @@ function mapProduct(p: DentalkartProduct): ProductData {
   const packSize = detectPackSize(name, p.short_description, productUrl);
   const unitPrice = calculateUnitPrice(price, packSize);
 
+  // Build packaging info: prefer packaging_contents, fall back to manufacturer
+  const packaging = p.packaging_contents || p.manufacturer || "";
+
   return {
     name,
     url: productUrl,
@@ -143,11 +149,12 @@ function mapProduct(p: DentalkartProduct): ProductData {
     price,
     mrp,
     discount,
-    packaging: p.manufacturer || "",
+    packaging,
     inStock,
     description: p.short_description || "",
     source: "dentalkart",
     packSize,
     unitPrice,
+    sku: p.sku || undefined,
   };
 }

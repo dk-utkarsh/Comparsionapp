@@ -11,6 +11,7 @@ export interface ProductData {
   source: string;
   packSize: number; // detected pack quantity (1 = single unit)
   unitPrice: number; // price per single unit
+  sku?: string; // product SKU code (e.g., VP2382, S5083)
 }
 
 export type MatchVerdict = "confirmed" | "possible" | "variant" | "rejected";

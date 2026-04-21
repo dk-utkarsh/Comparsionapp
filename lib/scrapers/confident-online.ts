@@ -64,7 +64,7 @@ export async function searchConfidentOnline(
 
     // For each found product ID, gather all associated data
     for (const { id, name } of nameElements) {
-      if (products.length >= 3) break;
+      if (products.length >= 10) break;
       if (!name) continue;
 
       // Price from .price{id} element
@@ -120,7 +120,7 @@ export async function searchConfidentOnline(
     if (products.length === 0) {
       // Look for product cards with links, images, and prices
       $("a[href*='product']").each((_, el) => {
-        if (products.length >= 3) return;
+        if (products.length >= 10) return;
 
         const $el = $(el);
         const $parent = $el.parent();

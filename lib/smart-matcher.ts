@@ -144,13 +144,39 @@ export function isSmartMatch(
   if (hasConfigurationConflict(search, found)) return false;
 
   // ── 17. Sufficient keyword overlap (word boundary) ──
-  const matchCount = searchWords.filter((w) => wordBoundaryMatch(found, w)).length;
+  const matchedWords = searchWords.filter((w) => wordBoundaryMatch(found, w));
+  const matchCount = matchedWords.length;
   if (matchCount < 2 && searchWords.length >= 2) return false;
 
   const overlapRatio = matchCount / searchWords.length;
   if (overlapRatio < 0.4) return false;
 
-  // ── 18. String similarity sanity ──
+  // ── 18. Product line identity ──
+  // If search has 3+ words, at least one NON-BRAND, NON-GENERIC word must match.
+  // This prevents "Ethicon Vicryl Suture" matching "Ethicon Mersilk Suture" —
+  // both share "Ethicon" + "Suture" but "Vicryl" ≠ "Mersilk".
+  if (searchWords.length >= 3) {
+    const genericWords = new Set([
+      "suture", "sutures", "cement", "composite", "adhesive", "bracket",
+      "brackets", "file", "files", "bur", "burs", "wire", "wires",
+      "instrument", "instruments", "gloves", "mask", "implant",
+      "crown", "crowns", "band", "bands", "elastic", "elastics",
+      "forceps", "curette", "curettes", "scaler", "handpiece",
+      "syringe", "needle", "matrix", "strip", "strips",
+    ]);
+    // Words beyond brand that are NOT generic product types
+    const identityWords = searchWords.slice(1).filter(
+      (w) => w.length >= 3 && !genericWords.has(w)
+    );
+    // At least one identity word (product line name like "Vicryl", "Protaper", "SonicFill")
+    // must appear in the found product
+    if (identityWords.length > 0) {
+      const identityMatched = identityWords.some((w) => wordBoundaryMatch(found, w));
+      if (!identityMatched) return false;
+    }
+  }
+
+  // ── 19. String similarity sanity ──
   const similarity = stringSimilarity.compareTwoStrings(search, found);
   if (similarity < 0.15) return false;
 

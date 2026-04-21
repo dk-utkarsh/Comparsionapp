@@ -57,7 +57,7 @@ export async function searchOralkart(
 
     if (!Array.isArray(products) || products.length === 0) return [];
 
-    return Promise.all(products.slice(0, 3).map(mapProduct));
+    return Promise.all(products.slice(0, 10).map(mapProduct));
   } catch {
     return [];
   }

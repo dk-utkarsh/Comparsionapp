@@ -12,6 +12,7 @@ import { isSmartMatch } from "../smart-matcher";
 import { calculateEquivalentPrice } from "../pack-detector";
 import { extractVariantInfo, scoreVariantMatch } from "../variant-extractor";
 import { extractSmartQueries } from "../keyword-extractor";
+import { getCachedCompetitorUrls, saveCachedCompetitorUrl } from "../db";
 import stringSimilarity from "string-similarity";
 import { searchDentalkart } from "./dentalkart";
 import { searchPinkblue } from "./pinkblue";
@@ -168,6 +169,7 @@ export interface ProductContext {
   description?: string;
   manufacturer?: string;
   packaging?: string;
+  sku?: string;
 }
 
 export async function compareProduct(
@@ -218,12 +220,39 @@ export async function compareProduct(
   // ═══════════════════════════════════════════════════════════
   // Build smart search queries using name + description + packaging
   const referenceProduct = dentalkart ? dentalkart.name : productName;
+  const dkSku = dentalkart?.sku;
   const enrichedContext: ProductContext = {
     ...context,
     description: context.description || dentalkart?.description,
     packaging: context.packaging || dentalkart?.packaging,
+    sku: context.sku || dkSku,
   };
   const searchQueries = extractSmartQueries(referenceProduct, enrichedContext);
+
+  // UPGRADE 1: If DK product has a SKU, add SKU-based queries for competitors
+  if (dkSku) {
+    const brand = referenceProduct.split(/\s+/)[0] || "";
+    const skuBrand = `${brand} ${dkSku}`.trim();
+    if (!searchQueries.includes(skuBrand)) {
+      searchQueries.splice(1, 0, skuBrand); // insert as Q2 (high priority)
+    }
+    if (!searchQueries.includes(dkSku)) {
+      searchQueries.splice(2, 0, dkSku); // insert as Q3
+    }
+  }
+
+  // UPGRADE 2: Check URL cache before scraping competitors
+  const cachedResults: Record<string, { url: string; name: string | null; price: number | null }> = {};
+  if (dentalkart) {
+    const cached = await getCachedCompetitorUrls(dentalkart.name, dkSku);
+    for (const entry of cached) {
+      cachedResults[entry.competitor_id] = {
+        url: entry.competitor_url,
+        name: entry.competitor_name,
+        price: entry.competitor_price,
+      };
+    }
+  }
 
   // Start web discovery in parallel with competitor scraping (Phase 2.5)
   const webDiscoveryPromise = discoverOnWeb(
@@ -237,20 +266,49 @@ export async function compareProduct(
     ? { price: dentalkart.price, packSize: dentalkart.packSize || 1 }
     : undefined;
 
-  // ROUND 1: Try Q1 (most specific) on ALL competitors in parallel
+  // ROUND 0: Try cached URLs first (instant, no scraping needed)
+  const competitorResults: Record<string, ProductData | null> = {};
+  const cachedCompetitorIds = new Set<string>();
+
+  if (Object.keys(cachedResults).length > 0) {
+    const cachePromises = competitors
+      .filter((comp) => cachedResults[comp.id])
+      .map(async (comp) => {
+        const cached = cachedResults[comp.id];
+        try {
+          const pageProduct = await scrapeProductPage(cached.url, comp.id);
+          if (pageProduct && pageProduct.price > 0) {
+            return { id: comp.id, product: pageProduct };
+          }
+        } catch {
+          // Cache miss — will fall through to normal scraping
+        }
+        return { id: comp.id, product: null };
+      });
+
+    const cacheResults = await Promise.allSettled(cachePromises);
+    for (const entry of cacheResults) {
+      if (entry.status === "fulfilled" && entry.value.product) {
+        competitorResults[entry.value.id] = entry.value.product;
+        cachedCompetitorIds.add(entry.value.id);
+      }
+    }
+  }
+
+  // ROUND 1: Try Q1 (most specific) on competitors NOT found in cache
+  const uncachedCompetitors = competitors.filter((c) => !cachedCompetitorIds.has(c.id));
   const round1 = await Promise.allSettled(
-    competitors.map(async (comp) => ({
+    uncachedCompetitors.map(async (comp) => ({
       id: comp.id,
       product: await findOnCompetitor(comp, productName, searchQueries[0], reference),
     }))
   );
 
-  const competitorResults: Record<string, ProductData | null> = {};
   const missed: CompetitorConfig[] = [];
 
-  for (let i = 0; i < competitors.length; i++) {
+  for (let i = 0; i < uncachedCompetitors.length; i++) {
     const entry = round1[i];
-    const comp = competitors[i];
+    const comp = uncachedCompetitors[i];
     if (entry.status === "fulfilled" && entry.value.product) {
       competitorResults[comp.id] = entry.value.product;
     } else {
@@ -307,6 +365,27 @@ export async function compareProduct(
         if (idx >= 0) stillMissed.splice(idx, 1);
       }
     }
+  }
+
+  // UPGRADE 2: Save newly found competitor URLs to cache (non-blocking)
+  if (dentalkart) {
+    const savePromises: Promise<void>[] = [];
+    for (const [compId, compProduct] of Object.entries(competitorResults)) {
+      if (compProduct && compProduct.url && !cachedCompetitorIds.has(compId)) {
+        savePromises.push(
+          saveCachedCompetitorUrl(
+            dentalkart.name,
+            dkSku,
+            compId,
+            compProduct.url,
+            compProduct.name,
+            compProduct.price
+          )
+        );
+      }
+    }
+    // Fire-and-forget — don't block the response on cache writes
+    Promise.allSettled(savePromises).catch(() => {});
   }
 
   // ═══════════════════════════════════════════════════════════
