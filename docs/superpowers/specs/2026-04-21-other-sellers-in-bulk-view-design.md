@@ -42,9 +42,10 @@ Consumers
 
 Two tiers of promotion, one tier purely informational:
 
-- `confirmed` → counted by `getCheapestSource`, `getCheapestId`, `getMostExpensiveId`, `getPriceDiff`, and backend alert generation.
-- `possible` → rendered with an amber "Likely match" badge, never factored into pricing logic.
-- `variant` / `rejected` → not rendered.
+- `confirmed` → counted by `getCheapestSource`, `getCheapestId`, `getMostExpensiveId`, `getPriceDiff`, and backend alert generation. Rendered in the `Also available on the web` group (emerald tint) in both `full` and `compact` variants.
+- `possible` → rendered in the `Possibly available (lower confidence)` group (amber tint) in both `full` and `compact` variants. Never factored into pricing logic.
+- `variant` → rendered in the `Different variant` group (slate tint) in `full` variant only. Dropped in `compact` variant. Never factored into pricing logic.
+- `rejected` → already dropped upstream in `web-discovery.ts`; never reaches the UI.
 
 ## Components
 
@@ -55,18 +56,21 @@ Two tiers of promotion, one tier purely informational:
 | `components/DiscoveredSellerCard.tsx` | One card for one web-discovered seller | `{ item: DiscoveredMatch, dentalkartPrice?: number }` |
 | `components/DiscoveredSellersSection.tsx` | Heading + responsive card grid + empty state | `{ items: DiscoveredMatch[], dentalkartPrice?: number, variant?: "full" \| "compact" }` |
 
-**Card internals (lighter than a hardcoded competitor card):**
-- Top row: favicon (`https://www.google.com/s2/favicons?domain=<domain>&sz=32`) + `domain` in muted slate text.
-- Body: product image (if present; fallback to slate block), 2-line truncated name, price. If `item.mrp > item.price`, show MRP struck through and compute the `% off` inline. `DiscoveredMatch` has no `discount` field — it is derived as `Math.round((mrp - price) / mrp * 100)`.
-- Footer: confidence badge — `CONFIRMED` (emerald) or `LIKELY MATCH` (amber), and external-link icon linking to `url` with `target="_blank"` and `rel="noopener noreferrer"`.
-- If `dentalkartPrice` is passed and the card price is strictly less, add a subtle green ring + "Cheaper than DK" pill.
+**Card internals (matches the existing `/compare-tool` `DiscoveredGroup` mini-card — horizontal layout):**
+- Anchor (`<a>`) with `target="_blank" rel="noopener noreferrer"`, `href={item.url}`, `title={item.reason || item.name}`. Class: `flex items-start gap-3 p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all group`.
+- Left: `item.image` as a `w-10 h-10 rounded object-contain bg-gray-50 border border-gray-100 shrink-0` thumbnail. Rendered only when `item.image` is truthy; no fallback block (matches existing behavior).
+- Middle (flex-col): first row is a domain pill (`px-1.5 py-0.5 text-[10px] font-semibold rounded bg-blue-50 text-blue-600`) plus a tint-coded confidence percent badge when `item.confidence > 0` (`{Math.round(item.confidence * 100)}%`). Second row is the name (`text-xs text-gray-700 truncate group-hover:text-blue-700`). Third row is price (`text-sm font-bold text-gray-900`) + struck-through MRP when `item.mrp > item.price` + `Out of stock` when `!item.inStock` + `item.variantDiff` when present.
+- Right: external-link icon (`w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400 shrink-0 mt-1`).
+- **Additive change vs. existing `/compare-tool`:** when `dentalkartPrice` prop is passed and `item.price < dentalkartPrice`, append a `Cheaper than DK` pill (`text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-700`) to the price row. This is the only visual addition to the `/compare-tool` output.
+- No derived `% off` rendering. `DiscoveredMatch` has no `discount` field and the existing code does not compute one; keep parity.
 
 **Section internals:**
-- Heading: `Also found on the web ({n})`.
-- Sorts items by verdict rank (confirmed first, possible second) then by price ascending.
-- If `items.length === 0`, renders nothing — no placeholder text in the drawer.
-- `variant="compact"` → 2-col grid on desktop (used in the bulk drawer beneath the 5-col competitor grid).
-- `variant="full"` → 3-col grid on desktop (mirrors the existing `/compare-tool` layout).
+- Partitions `items` into three buckets by `verdict`: `confirmed` (including items with missing verdict — matches existing `(d.verdict ?? "confirmed") === "confirmed"` fallback), `possible`, `variant`.
+- Renders each non-empty bucket as a `DiscoveredGroup` — a header row (tint-coded dot + title + count badge) above a responsive grid of `DiscoveredSellerCard`s.
+- `variant="full"` → renders all three buckets (`Also available on the web` / `Possibly available (lower confidence)` / `Different variant`). Grid classes: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2` (matches existing `/compare-tool`).
+- `variant="compact"` → renders only `confirmed` + `possible` buckets (drops `variant` hits, per decision B in brainstorming). Grid classes: `grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2` (tighter, because the bulk drawer already has a 5-col competitor grid above).
+- If no bucket has items after filtering, the section returns `null` — no placeholder text.
+- Wrapper spacing: `mt-5 pt-4 border-t border-gray-200 space-y-4` (matches existing `/compare-tool`).
 
 ### Changed files
 
