@@ -13,21 +13,29 @@ export interface ProductData {
   unitPrice: number; // price per single unit
 }
 
+export type MatchVerdict = "confirmed" | "possible" | "variant" | "rejected";
+
+export interface DiscoveredMatch {
+  domain: string;
+  name: string;
+  price: number;
+  mrp: number;
+  url: string;
+  image: string;
+  inStock: boolean;
+  verdict: MatchVerdict;
+  confidence: number;
+  reason?: string;
+  variantDiff?: string;
+}
+
 export interface ComparisonResult {
   id: string;
   searchTerm: string;
   dentalkart: ProductData | null;
   competitors: Record<string, ProductData | null>;
   alerts: PriceAlert[];
-  discovered: Array<{
-    domain: string;
-    name: string;
-    price: number;
-    mrp: number;
-    url: string;
-    image: string;
-    inStock: boolean;
-  }>;
+  discovered: DiscoveredMatch[];
   createdAt: string;
 }
 

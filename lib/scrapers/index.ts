@@ -1,4 +1,11 @@
-import { ProductData, ComparisonResult, PriceAlert, CompetitorConfig } from "../types";
+import {
+  ProductData,
+  ComparisonResult,
+  PriceAlert,
+  CompetitorConfig,
+  DiscoveredMatch,
+  MatchVerdict,
+} from "../types";
 import { competitors } from "../competitors";
 import { isRelevantProduct } from "../matcher";
 import { isSmartMatch } from "../smart-matcher";
@@ -222,7 +229,7 @@ export async function compareProduct(
   const webDiscoveryPromise = discoverOnWeb(
     productName,
     searchQueries[0],
-    { timeout: 6000, maxResults: 5 }
+    { timeout: 6000, maxResults: 10 }
   ).catch(() => []);
 
   // Reference data (DK price + pack size) for post-match price-band sanity.
@@ -314,10 +321,26 @@ export async function compareProduct(
   );
   knownDomains.add("dentalkart.com");
 
-  const discovered: ComparisonResult["discovered"] = [];
+  const discovered: DiscoveredMatch[] = [];
   for (const item of webDiscovered) {
     const domain = item.domain.replace(/^www\./, "").toLowerCase();
     if (knownDomains.has(domain)) continue;
+
+    const verdict: MatchVerdict =
+      item.triage.verdict === "accept"
+        ? "confirmed"
+        : item.triage.verdict === "grey"
+          ? "possible"
+          : "rejected";
+
+    // Rule-only pipeline: map triage similarity to a displayable confidence.
+    // When the LLM stage lands, this gets overwritten by the LLM verdict.
+    const confidence =
+      verdict === "confirmed"
+        ? Math.max(0.85, item.triage.similarity)
+        : verdict === "possible"
+          ? 0.5
+          : 0;
 
     discovered.push({
       domain: item.domain,
@@ -327,8 +350,25 @@ export async function compareProduct(
       url: item.url,
       image: item.product.image,
       inStock: item.product.inStock,
+      verdict,
+      confidence,
+      reason: item.triage.reasons[0],
     });
   }
+
+  // Sort discovered by verdict (confirmed first, possible second) then by price ascending.
+  const verdictRank: Record<MatchVerdict, number> = {
+    confirmed: 0,
+    possible: 1,
+    variant: 2,
+    rejected: 3,
+  };
+  discovered.sort((a, b) => {
+    const va = verdictRank[a.verdict] ?? 9;
+    const vb = verdictRank[b.verdict] ?? 9;
+    if (va !== vb) return va - vb;
+    return a.price - b.price;
+  });
 
   // ═══════════════════════════════════════════════════════════
   // PHASE 3: Pack-size-aware price comparison

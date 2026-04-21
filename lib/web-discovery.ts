@@ -1,5 +1,5 @@
 import { ProductData } from "./types";
-import { isSmartMatch } from "./smart-matcher";
+import { triage, TriageResult } from "./match-triage";
 import { webSearch } from "./scrapers/web-search";
 import { scrapeProductPage } from "./scrapers/page-scraper";
 import { competitors } from "./competitors";
@@ -133,6 +133,7 @@ export interface WebDiscoveryResult {
   domain: string;
   url: string;
   product: ProductData;
+  triage: TriageResult;
 }
 
 /**
@@ -147,31 +148,21 @@ export async function discoverOnWeb(
   searchKeywords: string,
   options?: { timeout?: number; maxResults?: number }
 ): Promise<WebDiscoveryResult[]> {
-  const maxResults = options?.maxResults ?? 5;
-  const timeout = options?.timeout ?? 6000;
+  const maxResults = options?.maxResults ?? 10;
 
   try {
-    // Step 1: Search the web
     const query = `${searchKeywords} buy price`;
     const urls = await webSearch(query);
 
     if (urls.length === 0) return [];
 
-    // Step 2: Filter URLs
     const candidateUrls: string[] = [];
-
     for (const rawUrl of urls) {
       if (candidateUrls.length >= maxResults) break;
-
       try {
         const parsed = new URL(rawUrl);
-
-        // Skip known and excluded domains
         if (isExcludedDomain(parsed.hostname)) continue;
-
-        // Skip non-product URLs
         if (!isProductUrl(parsed.pathname)) continue;
-
         candidateUrls.push(rawUrl);
       } catch {
         // Invalid URL, skip
@@ -180,7 +171,6 @@ export async function discoverOnWeb(
 
     if (candidateUrls.length === 0) return [];
 
-    // Step 3: Scrape all candidate URLs in parallel
     const scrapeResults = await Promise.allSettled(
       candidateUrls.map(async (url) => {
         const domain = extractDomain(url);
@@ -189,8 +179,10 @@ export async function discoverOnWeb(
       })
     );
 
-    // Step 4: Filter and validate results
-    const validResults: WebDiscoveryResult[] = [];
+    // Triage every scraped candidate. The orchestrator decides what to do
+    // with grey/reject verdicts — discovery no longer silently drops anything
+    // that isn't a confident accept.
+    const results: WebDiscoveryResult[] = [];
 
     for (const result of scrapeResults) {
       if (result.status !== "fulfilled") continue;
@@ -199,18 +191,17 @@ export async function discoverOnWeb(
       if (!product) continue;
       if (product.price <= 0) continue;
 
-      // Smart match validation — product must actually be the same product
-      if (
-        !isSmartMatch(productName, product.name) &&
-        !isSmartMatch(searchKeywords, product.name)
-      ) {
-        continue;
-      }
+      const nameTriage = triage(productName, product.name);
+      const keywordTriage = triage(searchKeywords, product.name);
+      const better =
+        nameTriage.similarity >= keywordTriage.similarity ? nameTriage : keywordTriage;
 
-      validResults.push({ domain, url, product });
+      if (better.verdict === "reject") continue;
+
+      results.push({ domain, url, product, triage: better });
     }
 
-    return validResults;
+    return results;
   } catch (error) {
     console.error("Web discovery failed:", error);
     return [];
