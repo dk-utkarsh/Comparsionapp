@@ -478,6 +478,20 @@ export async function compareProduct(
         }
       }
     }
+
+    for (const d of discovered) {
+      if ((d.verdict ?? "confirmed") !== "confirmed") continue;
+      if (!d.price || d.price <= 0) continue;
+      if (d.price < dentalkart.price) {
+        alerts.push({
+          type: "cheaper_competitor",
+          competitor: d.domain,
+          competitorPrice: d.price,
+          dentalkartPrice: dentalkart.price,
+          priceDiff: Math.round(dentalkart.price - d.price),
+        });
+      }
+    }
   }
 
   return {
