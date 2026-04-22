@@ -30,63 +30,62 @@ function getPriceForSort(result: ComparisonResult, key: string): number {
   return result.competitors[key]?.price ?? Infinity;
 }
 
-function getCheapestSource(result: ComparisonResult): { source: string; price: number } | null {
-  const allPrices: { source: string; price: number }[] = [];
+function collectPricedSources(
+  result: ComparisonResult
+): { source: string; id: string; price: number }[] {
+  const all: { source: string; id: string; price: number }[] = [];
   if (result.dentalkart?.price) {
-    allPrices.push({ source: "Dentalkart", price: result.dentalkart.price });
+    all.push({
+      source: "Dentalkart",
+      id: "dentalkart",
+      price: result.dentalkart.price,
+    });
   }
   for (const comp of competitors) {
     const product = result.competitors[comp.id];
     if (product?.price) {
-      allPrices.push({ source: comp.name, price: product.price });
+      all.push({ source: comp.name, id: comp.id, price: product.price });
     }
   }
-  if (allPrices.length === 0) return null;
-  allPrices.sort((a, b) => a.price - b.price);
-  return allPrices[0];
+  for (const d of result.discovered) {
+    const verdict = d.verdict ?? "confirmed";
+    if (verdict !== "confirmed") continue;
+    if (!d.price || d.price <= 0) continue;
+    all.push({ source: d.domain, id: `web:${d.domain}`, price: d.price });
+  }
+  return all;
+}
+
+function getCheapestSource(
+  result: ComparisonResult
+): { source: string; price: number } | null {
+  const all = collectPricedSources(result);
+  if (all.length === 0) return null;
+  all.sort((a, b) => a.price - b.price);
+  return { source: all[0].source, price: all[0].price };
 }
 
 function getPriceDiff(result: ComparisonResult): number | null {
   const dkPrice = result.dentalkart?.price;
   if (!dkPrice) return null;
-  let lowestComp = Infinity;
-  for (const product of Object.values(result.competitors)) {
-    if (product?.price && product.price < lowestComp) {
-      lowestComp = product.price;
-    }
-  }
-  if (lowestComp === Infinity) return null;
-  return dkPrice - lowestComp;
+  const all = collectPricedSources(result).filter((s) => s.id !== "dentalkart");
+  if (all.length === 0) return null;
+  const lowest = Math.min(...all.map((s) => s.price));
+  return dkPrice - lowest;
 }
 
 function getCheapestId(result: ComparisonResult): string | null {
-  const allPrices: { source: string; price: number }[] = [];
-  if (result.dentalkart?.price) {
-    allPrices.push({ source: "dentalkart", price: result.dentalkart.price });
-  }
-  for (const [id, product] of Object.entries(result.competitors)) {
-    if (product?.price) {
-      allPrices.push({ source: id, price: product.price });
-    }
-  }
-  if (allPrices.length === 0) return null;
-  allPrices.sort((a, b) => a.price - b.price);
-  return allPrices[0].source;
+  const all = collectPricedSources(result);
+  if (all.length === 0) return null;
+  all.sort((a, b) => a.price - b.price);
+  return all[0].id;
 }
 
 function getMostExpensiveId(result: ComparisonResult): string | null {
-  const allPrices: { source: string; price: number }[] = [];
-  if (result.dentalkart?.price) {
-    allPrices.push({ source: "dentalkart", price: result.dentalkart.price });
-  }
-  for (const [id, product] of Object.entries(result.competitors)) {
-    if (product?.price) {
-      allPrices.push({ source: id, price: product.price });
-    }
-  }
-  if (allPrices.length < 2) return null;
-  allPrices.sort((a, b) => b.price - a.price);
-  return allPrices[0].source;
+  const all = collectPricedSources(result);
+  if (all.length < 2) return null;
+  all.sort((a, b) => b.price - a.price);
+  return all[0].id;
 }
 
 function formatPrice(price: number | undefined | null): string {
