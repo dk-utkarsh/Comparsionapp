@@ -23,6 +23,7 @@ export interface TriageResult {
 
 const ACCEPT_THRESHOLD = 0.85;
 const GREY_FLOOR = 0.35;
+const BRAND_RELAXED_FLOOR = 0.5; // Surface brand-mismatched pages as "possible" if name-similar
 
 export function triage(searchTerm: string, candidateName: string): TriageResult {
   const reasons: string[] = [];
@@ -38,6 +39,16 @@ export function triage(searchTerm: string, candidateName: string): TriageResult 
   const smartOk = isSmartMatch(searchTerm, candidateName);
 
   if (!smartOk) {
+    // Smart matcher rejected on brand or hard conflict. If the overall name
+    // similarity is still high enough, surface it as "possible" so generic
+    // web sellers (who might list the product under a different brand label)
+    // aren't dropped silently. Users see a "possible" badge and decide.
+    if (similarity >= BRAND_RELAXED_FLOOR) {
+      reasons.push(
+        `smart-matcher rejected (brand/conflict) but similarity ${similarity.toFixed(2)} ≥ ${BRAND_RELAXED_FLOOR} — surfacing as possible`
+      );
+      return { verdict: "grey", similarity, reasons };
+    }
     reasons.push("smart-matcher rejected (brand mismatch or hard conflict)");
     return { verdict: "reject", similarity, reasons };
   }

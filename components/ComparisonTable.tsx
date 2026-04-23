@@ -17,11 +17,9 @@ type SortKey =
   | "name"
   | "dentalkart"
   | "pinkblue"
-  | "dentganga"
   | "medikabazar"
   | "oralkart"
-  | "cheapest"
-  | "diff";
+  | "bestDeal";
 
 type SortDir = "asc" | "desc";
 
@@ -143,21 +141,15 @@ export default function ComparisonTable({ results, onRescrape }: ComparisonTable
           break;
         case "dentalkart":
         case "pinkblue":
-        case "dentganga":
         case "medikabazar":
         case "oralkart":
           cmp = getPriceForSort(rA, sortKey) - getPriceForSort(rB, sortKey);
           break;
-        case "cheapest": {
-          const cA = getCheapestSource(rA)?.source ?? "ZZZ";
-          const cB = getCheapestSource(rB)?.source ?? "ZZZ";
-          cmp = cA.localeCompare(cB);
-          break;
-        }
-        case "diff": {
-          const dA = getPriceDiff(rA) ?? Infinity;
-          const dB = getPriceDiff(rB) ?? Infinity;
-          cmp = dA - dB;
+        case "bestDeal": {
+          // Sort by savings descending — biggest competitor wins show first
+          const dA = getPriceDiff(rA) ?? -Infinity;
+          const dB = getPriceDiff(rB) ?? -Infinity;
+          cmp = dB - dA;
           break;
         }
       }
@@ -188,8 +180,7 @@ export default function ComparisonTable({ results, onRescrape }: ComparisonTable
     { key: "name", label: "Product Name", className: "min-w-[200px]" },
     { key: "dentalkart", label: "Dentalkart" },
     ...competitors.map((c) => ({ key: c.id as SortKey, label: c.name })),
-    { key: "cheapest", label: "Cheapest" },
-    { key: "diff", label: "Diff" },
+    { key: "bestDeal", label: "Best Deal", className: "min-w-[180px]" },
   ];
 
   return (
@@ -302,40 +293,13 @@ export default function ComparisonTable({ results, onRescrape }: ComparisonTable
                         );
                       })}
 
-                      {/* Cheapest */}
+                      {/* Best Deal — merged cheapest + savings */}
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {cheapestInfo ? (
-                          <span
-                            className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                              cheapestInfo.source === "Dentalkart"
-                                ? "bg-blue-50 text-accent"
-                                : "bg-amber-50 text-amber-700"
-                            }`}
-                          >
-                            {cheapestInfo.source}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-light">--</span>
-                        )}
-                      </td>
-
-                      {/* Diff */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {diff !== null ? (
-                          <span
-                            className={`text-xs font-bold ${
-                              diff > 0 ? "text-danger" : diff < 0 ? "text-success" : "text-slate-muted"
-                            }`}
-                          >
-                            {diff > 0
-                              ? `+₹${diff.toLocaleString("en-IN")}`
-                              : diff < 0
-                                ? `-₹${Math.abs(diff).toLocaleString("en-IN")}`
-                                : "₹0"}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-light">--</span>
-                        )}
+                        <BestDealCell
+                          cheapestInfo={cheapestInfo}
+                          diff={diff}
+                          hasDentalkart={result.dentalkart?.price != null}
+                        />
                       </td>
 
                       {/* Expand icon */}
@@ -449,5 +413,76 @@ function PriceCell({
     >
       {formatPrice(price)}
     </span>
+  );
+}
+
+function BestDealCell({
+  cheapestInfo,
+  diff,
+  hasDentalkart,
+}: {
+  cheapestInfo: { source: string; price: number } | null;
+  diff: number | null;
+  hasDentalkart: boolean;
+}) {
+  if (!cheapestInfo) {
+    return <span className="text-xs text-slate-light">--</span>;
+  }
+
+  const isDK = cheapestInfo.source === "Dentalkart";
+
+  // Case 1: DK is cheapest — green check badge
+  if (isDK) {
+    return (
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-success">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+        <span className="text-xs font-bold">DK wins</span>
+        <span className="text-xs font-semibold text-emerald-700/80 tabular-nums">
+          {formatPrice(cheapestInfo.price)}
+        </span>
+      </div>
+    );
+  }
+
+  // Case 2: Competitor cheapest — but DK has no price (can't compute savings)
+  if (!hasDentalkart || diff === null) {
+    return (
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">
+        <span className="text-xs font-semibold">{cheapestInfo.source}</span>
+        <span className="text-xs font-bold tabular-nums">
+          {formatPrice(cheapestInfo.price)}
+        </span>
+      </div>
+    );
+  }
+
+  // Case 3: Competitor cheapest AND cheaper than DK — show savings
+  if (diff > 0) {
+    return (
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-danger">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2v20" />
+          <path d="m19 15-7 7-7-7" />
+        </svg>
+        <span className="text-xs font-bold tabular-nums">
+          Save ₹{diff.toLocaleString("en-IN")}
+        </span>
+        <span className="text-xs font-medium text-red-700/80">
+          at {cheapestInfo.source}
+        </span>
+      </div>
+    );
+  }
+
+  // Case 4: Competitor cheapest but DK is still cheaper somehow (data edge)
+  return (
+    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-50 text-slate-muted">
+      <span className="text-xs font-semibold">{cheapestInfo.source}</span>
+      <span className="text-xs font-bold tabular-nums">
+        {formatPrice(cheapestInfo.price)}
+      </span>
+    </div>
   );
 }

@@ -135,6 +135,39 @@ export default function ComparisonCard({
         </div>
       )}
 
+      {/* Multiple variants — surface the full range so the user knows the
+          displayed price is one of several, and can see the apples-to-apples
+          variant against competitors. */}
+      {product.variants && product.variants.length > 1 && (
+        <div className="mt-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-muted mb-1.5">
+            {product.variants.length} variants available
+          </div>
+          <div className="space-y-1">
+            {product.variants.map((v) => {
+              const isSelected = v.sku === product.selectedVariantSku;
+              return (
+                <div
+                  key={v.sku}
+                  className={`flex items-center justify-between gap-2 text-xs px-1.5 py-1 rounded ${
+                    isSelected ? "bg-teal/10 text-teal font-semibold" : "text-slate-text"
+                  }`}
+                  title={v.name}
+                >
+                  <span className="truncate flex-1">
+                    {isSelected ? "▸ " : ""}
+                    {shortVariantLabel(v.name)}
+                  </span>
+                  <span className="tabular-nums shrink-0">
+                    ₹{v.price.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="mt-3 space-y-1 text-xs text-slate-muted">
         {product.packaging && <div>{product.packaging}</div>}
         <div
@@ -179,4 +212,15 @@ export default function ComparisonCard({
       {cardContent}
     </div>
   );
+}
+
+/**
+ * Collapse a full variant name into the distinguishing pack spec.
+ * "Novabone Dental Putty Cartridge - Bio Graft 6 X 0.5cc" → "6 × 0.5cc".
+ * Falls back to the original name when no pack pattern is found.
+ */
+function shortVariantLabel(name: string): string {
+  const m = name.match(/\b\d+\s*[xX×]\s*\d+(?:\.\d+)?\s*(?:cc|ml|oz|mg|g|gm)\b/i);
+  if (m) return m[0].replace(/\s+/g, " ").replace(/x/i, "×");
+  return name;
 }

@@ -82,7 +82,9 @@ interface DentalkartProduct {
   short_description?: string;
   manufacturer?: string;
   sku?: string;
-  packaging_contents?: string;
+  // DK's API has been observed to return this as BOTH a string (older SKUs)
+  // and an array of strings (newer SKUs, often empty `[]`). Handle both.
+  packaging_contents?: string | string[];
   categories?: string[];
 }
 
@@ -139,8 +141,13 @@ function mapProduct(p: DentalkartProduct): ProductData {
   const packSize = detectPackSize(name, p.short_description, productUrl);
   const unitPrice = calculateUnitPrice(price, packSize);
 
-  // Build packaging info: prefer packaging_contents, fall back to manufacturer
-  const packaging = p.packaging_contents || p.manufacturer || "";
+  // Build packaging info: prefer packaging_contents, fall back to manufacturer.
+  // Guard against the array form — `[] || "x"` returns `[]` (truthy), which
+  // used to swallow the fallback and leave every product's packaging blank.
+  const rawPackaging = Array.isArray(p.packaging_contents)
+    ? p.packaging_contents.filter(Boolean).join(", ")
+    : p.packaging_contents;
+  const packaging = rawPackaging || p.manufacturer || "";
 
   return {
     name,

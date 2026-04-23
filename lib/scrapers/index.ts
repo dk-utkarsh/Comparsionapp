@@ -15,13 +15,11 @@ import { extractSmartQueries } from "../keyword-extractor";
 import { getCachedCompetitorUrls, saveCachedCompetitorUrl } from "../db";
 import stringSimilarity from "string-similarity";
 import { searchDentalkart } from "./dentalkart";
+import { scrapeDentalkartVariants, applyVariantToProductData } from "./dentalkart-variants";
 import { searchPinkblue } from "./pinkblue";
-import { searchDentganga } from "./dentganga";
 import { searchMedikabazar } from "./medikabazar";
 import { searchOralkart } from "./oralkart";
 import { searchDentmark } from "./dentmark";
-import { searchConfidentOnline } from "./confident-online";
-import { webSearch } from "./web-search";
 import { scrapeProductPage } from "./page-scraper";
 import { discoverOnWeb } from "../web-discovery";
 import { randomUUID } from "crypto";
@@ -53,11 +51,9 @@ const scraperMap: Record<
   (productName: string) => Promise<ProductData[]>
 > = {
   pinkblue: searchPinkblue,
-  dentganga: searchDentganga,
   medikabazar: searchMedikabazar,
   oralkart: searchOralkart,
   dentmark: searchDentmark,
-  "confident-online": searchConfidentOnline,
 };
 
 /**
@@ -176,9 +172,16 @@ export async function compareProduct(
   productName: string,
   context: ProductContext = {}
 ): Promise<ComparisonResult> {
+  const t0 = Date.now();
+  const timings: Record<string, number> = {};
+  const mark = (label: string, since: number) => {
+    timings[label] = Date.now() - since;
+  };
+
   // ═══════════════════════════════════════════════════════════
   // PHASE 1: Find product on Dentalkart
   // ═══════════════════════════════════════════════════════════
+  const tPhase1 = Date.now();
   const cleanedName = cleanSearchQuery(productName);
   const variantInfo = extractVariantInfo(productName);
 
@@ -187,6 +190,27 @@ export async function compareProduct(
   let dentalkartResults = await searchDentalkart(productName);
   if (dentalkartResults.length === 0 && cleanedName !== productName) {
     dentalkartResults = await searchDentalkart(cleanedName);
+  }
+
+  // Smart fallback — if literal + cleaned both returned nothing, try the same
+  // brand/type/model queries we use for competitors. Handles cases where the
+  // user's name contains a variant token (e.g. "- 0.022") that DK's search
+  // doesn't index, or where our cleaner didn't strip enough to get a hit.
+  if (dentalkartResults.length === 0) {
+    const fallbackQueries = extractSmartQueries(productName, context).filter(
+      (q) => q.length >= 3 && q !== productName && q !== cleanedName
+    );
+    if (fallbackQueries.length > 0) {
+      const attempts = await Promise.allSettled(
+        fallbackQueries.slice(0, 3).map((q) => searchDentalkart(q))
+      );
+      for (const a of attempts) {
+        if (a.status === "fulfilled" && a.value.length > 0) {
+          dentalkartResults = a.value;
+          break;
+        }
+      }
+    }
   }
 
   // Match the right variant using size/dimension/SKU info
@@ -215,9 +239,26 @@ export async function compareProduct(
     }
   }
 
+  // If DK's search API matched a configurable product (one listing with
+  // multiple SKUs behind a variant picker), the returned price is the
+  // "starting from" — not always what the user actually wants. Fetch the
+  // product page and extract all variant prices so we can pick the right
+  // one and/or show the full variant range in the UI.
+  if (dentalkart && dentalkart.url) {
+    const tVariants = Date.now();
+    const variants = await scrapeDentalkartVariants(dentalkart.url);
+    mark("phase1_dk_variants", tVariants);
+    if (variants.length > 1) {
+      dentalkart = applyVariantToProductData(dentalkart, variants, productName);
+    }
+  }
+
+  mark("phase1_dentalkart", tPhase1);
+
   // ═══════════════════════════════════════════════════════════
   // PHASE 2: Find on competitors using Dentalkart product info
   // ═══════════════════════════════════════════════════════════
+  const tPhase2 = Date.now();
   // Build smart search queries using name + description + packaging
   const referenceProduct = dentalkart ? dentalkart.name : productName;
   const dkSku = dentalkart?.sku;
@@ -254,11 +295,16 @@ export async function compareProduct(
     }
   }
 
-  // Start web discovery in parallel with competitor scraping (Phase 2.5)
+  // Start web discovery in parallel with competitor scraping (Phase 2.5).
+  // Prefer DK's full product name as the search query once we've matched —
+  // a well-formed listing name produces dramatically better search hits than
+  // the user's raw query (often partial / mis-spelled). Fall back to the
+  // smart Q1 when DK didn't match.
+  const discoveryQuery = dentalkart?.name || searchQueries[0] || productName;
   const webDiscoveryPromise = discoverOnWeb(
     productName,
-    searchQueries[0],
-    { timeout: 6000, maxResults: 10 }
+    discoveryQuery,
+    { timeout: 8000, maxResults: 15 }
   ).catch(() => []);
 
   // Reference data (DK price + pack size) for post-match price-band sanity.
@@ -267,6 +313,7 @@ export async function compareProduct(
     : undefined;
 
   // ROUND 0: Try cached URLs first (instant, no scraping needed)
+  const tRound0 = Date.now();
   const competitorResults: Record<string, ProductData | null> = {};
   const cachedCompetitorIds = new Set<string>();
 
@@ -295,7 +342,10 @@ export async function compareProduct(
     }
   }
 
+  mark("phase2_round0_cache", tRound0);
+
   // ROUND 1: Try Q1 (most specific) on competitors NOT found in cache
+  const tRound1 = Date.now();
   const uncachedCompetitors = competitors.filter((c) => !cachedCompetitorIds.has(c.id));
   const round1 = await Promise.allSettled(
     uncachedCompetitors.map(async (comp) => ({
@@ -317,8 +367,13 @@ export async function compareProduct(
     }
   }
 
+  mark("phase2_round1", tRound1);
+
   // ROUND 2: Retry missed competitors with broader/alternative queries
+  const tRound2 = Date.now();
+  let round2Triggered = false;
   if (missed.length > 0) {
+    round2Triggered = true;
     // Generate alternate queries: strip special chars, try remaining queries
     const altQueries = new Set<string>();
     for (const q of searchQueries.slice(1)) {
@@ -341,31 +396,37 @@ export async function compareProduct(
 
     const altArr = [...altQueries].filter((q) => q.length > 3);
 
-    // Try each alternate query on missed competitors
-    const stillMissed = [...missed];
-    for (const altQ of altArr) {
-      if (stillMissed.length === 0) break;
-      const round2 = await Promise.allSettled(
-        stillMissed.map(async (comp) => ({
-          id: comp.id,
-          product: await findOnCompetitor(comp, productName, altQ, reference),
-        }))
-      );
-
-      const newlyFound: string[] = [];
-      for (const entry of round2) {
-        if (entry.status === "fulfilled" && entry.value.product) {
-          competitorResults[entry.value.id] = entry.value.product;
-          newlyFound.push(entry.value.id);
+    // Fire every (competitor × alt-query) combination concurrently.
+    // For each missed competitor, take the earliest-priority successful match
+    // (altArr[0] preferred over altArr[1], etc.) so result quality is unchanged.
+    const retryPerComp = await Promise.allSettled(
+      missed.map(async (comp) => {
+        const attempts = await Promise.allSettled(
+          altArr.map(async (altQ, queryIdx) => ({
+            queryIdx,
+            product: await findOnCompetitor(comp, productName, altQ, reference),
+          }))
+        );
+        let best: { queryIdx: number; product: ProductData } | null = null;
+        for (const a of attempts) {
+          if (a.status !== "fulfilled" || !a.value.product) continue;
+          if (!best || a.value.queryIdx < best.queryIdx) {
+            best = { queryIdx: a.value.queryIdx, product: a.value.product };
+          }
         }
-      }
-      // Remove found competitors from stillMissed
-      for (const id of newlyFound) {
-        const idx = stillMissed.findIndex((c) => c.id === id);
-        if (idx >= 0) stillMissed.splice(idx, 1);
+        return { id: comp.id, product: best?.product ?? null };
+      })
+    );
+
+    for (const entry of retryPerComp) {
+      if (entry.status === "fulfilled" && entry.value.product) {
+        competitorResults[entry.value.id] = entry.value.product;
       }
     }
   }
+
+  if (round2Triggered) mark("phase2_round2", tRound2);
+  mark("phase2_total", tPhase2);
 
   // UPGRADE 2: Save newly found competitor URLs to cache (non-blocking)
   if (dentalkart) {
@@ -391,7 +452,9 @@ export async function compareProduct(
   // ═══════════════════════════════════════════════════════════
   // PHASE 2.5: Collect web discovery results
   // ═══════════════════════════════════════════════════════════
+  const tPhase25 = Date.now();
   const webDiscovered = await webDiscoveryPromise;
+  mark("phase2.5_web_discovery_wait", tPhase25);
 
   // Build the discovered array for the response, and merge unique
   // domains into competitorResults if they don't already exist
@@ -493,6 +556,9 @@ export async function compareProduct(
       }
     }
   }
+
+  mark("total", t0);
+  console.log(`[compareProduct] "${productName}" ${timings.total}ms`, timings);
 
   return {
     id: randomUUID(),

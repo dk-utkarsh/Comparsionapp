@@ -11,6 +11,14 @@
  *   → { angle: "90", sku: "RMFM90", raw: ["90", "degree", "micro", "RMFM90"] }
  */
 
+/** Multi-pack specification: "6 X 0.5cc" → count:6, unitSize:0.5, unit:"cc". */
+export interface PackSpec {
+  count: number;      // number of items in pack (e.g. 6 cartridges)
+  unitSize: number;   // per-item size (e.g. 0.5 cc per cartridge)
+  unit: string;       // "cc", "ml", "oz", "g", "mg" (lowercased)
+  totalVolume: number;// count * unitSize (same unit)
+}
+
 export interface VariantInfo {
   size: string | null;        // "5/8", "3/4", "1/2"
   weight: string | null;      // "2 oz", "60g"
@@ -20,6 +28,7 @@ export interface VariantInfo {
   color: string | null;       // "red", "blue", "clear"
   sku: string | null;         // "RMFM90", "RBL90"
   descriptor: string | null;  // "micro", "heavy", "light", "large"
+  packSpec: PackSpec | null;  // "6 X 0.5cc" | "4 x 0.25cc" | "2 cartridges of 0.5cc"
   raw: string[];              // all extracted variant tokens
 }
 
@@ -33,6 +42,7 @@ export function extractVariantInfo(name: string): VariantInfo {
     color: null,
     sku: null,
     descriptor: null,
+    packSpec: null,
     raw: [],
   };
 
@@ -92,7 +102,84 @@ export function extractVariantInfo(name: string): VariantInfo {
     info.raw.push(descMatch[1].toLowerCase());
   }
 
+  // Multi-pack specification — two shapes we've seen across dental sites:
+  //   1) "6 X 0.5cc", "4 x 0.25cc", "2x50ml"  (compact "count X unit-size")
+  //   2) "2 Cartridges of 0.5cc", "4 tubes of 30ml"  (count + container + "of" + unit-size)
+  info.packSpec = extractPackSpec(name);
+  if (info.packSpec) {
+    info.raw.push(
+      String(info.packSpec.count),
+      String(info.packSpec.unitSize),
+      info.packSpec.unit
+    );
+  }
+
   return info;
+}
+
+const PACK_UNITS = "cc|ml|oz|mg|g|gm";
+const COMPACT_PACK_RE = new RegExp(
+  `\\b(\\d+)\\s*[xX×]\\s*(\\d+(?:\\.\\d+)?)\\s*(${PACK_UNITS})\\b`,
+  "i"
+);
+const VERBOSE_PACK_RE = new RegExp(
+  `\\b(\\d+)\\s*(?:cartridges?|tubes?|bottles?|syringes?|vials?|packs?|containers?|refills?|sachets?|capsules?)\\s*(?:of\\s*)?(\\d+(?:\\.\\d+)?)\\s*(${PACK_UNITS})\\b`,
+  "i"
+);
+
+function extractPackSpec(text: string): PackSpec | null {
+  const compact = text.match(COMPACT_PACK_RE);
+  const verbose = text.match(VERBOSE_PACK_RE);
+  const m = compact || verbose;
+  if (!m) return null;
+
+  const count = parseInt(m[1], 10);
+  const unitSize = parseFloat(m[2]);
+  const unit = m[3].toLowerCase();
+  if (!Number.isFinite(count) || !Number.isFinite(unitSize) || count < 1 || unitSize <= 0) {
+    return null;
+  }
+  return {
+    count,
+    unitSize,
+    unit,
+    totalVolume: Math.round(count * unitSize * 1000) / 1000,
+  };
+}
+
+/**
+ * Compare two pack specs. Packs are equivalent when:
+ *   - units belong to the same family (volume or mass — we don't convert across)
+ *   - total size matches within 2% tolerance after normalizing to a canonical
+ *     unit within the family (ml for volume, g for mass)
+ *
+ * Returns true when a side is missing (not a conflict — missing info ≠ wrong).
+ */
+export function packSpecsMatch(a: PackSpec | null, b: PackSpec | null): boolean {
+  if (!a || !b) return true;
+  const an = normalize(a);
+  const bn = normalize(b);
+  // Unknown unit or cross-family → be permissive, don't reject.
+  if (!an || !bn || an.family !== bn.family) return true;
+  const rel = Math.abs(an.total - bn.total) / Math.max(an.total, bn.total);
+  return rel <= 0.02;
+}
+
+function normalize(p: PackSpec): { total: number; family: "volume" | "mass" } | null {
+  switch (p.unit) {
+    case "cc":
+    case "ml":
+      return { total: p.totalVolume, family: "volume" };
+    case "oz":
+      return { total: p.totalVolume * 29.5735, family: "volume" };
+    case "g":
+    case "gm":
+      return { total: p.totalVolume, family: "mass" };
+    case "mg":
+      return { total: p.totalVolume / 1000, family: "mass" };
+    default:
+      return null;
+  }
 }
 
 /**
@@ -150,6 +237,15 @@ export function scoreVariantMatch(
   if (variantInfo.descriptor) {
     total += 2;
     if (lower.includes(variantInfo.descriptor)) matched += 2;
+  }
+
+  // Pack spec match (very high weight — wrong pack is a different product)
+  if (variantInfo.packSpec) {
+    total += 5;
+    const candidateSpec = extractPackSpec(candidateName);
+    if (packSpecsMatch(variantInfo.packSpec, candidateSpec)) {
+      matched += 5;
+    }
   }
 
   if (total === 0) return 50;

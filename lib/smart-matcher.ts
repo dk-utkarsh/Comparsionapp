@@ -1,4 +1,5 @@
 import stringSimilarity from "string-similarity";
+import { extractVariantInfo, packSpecsMatch } from "./variant-extractor";
 
 /**
  * Smart product matcher v3 — minimal rules, maximum accuracy.
@@ -90,7 +91,6 @@ export function isSmartMatch(
   if (isGenericPage(found)) return false;
 
   const searchWords = extractWords(search);
-  const foundWords = extractWords(found);
   if (searchWords.length === 0) return false;
 
   // ── 1. Brand must match as whole word ──
@@ -142,6 +142,9 @@ export function isSmartMatch(
 
   // ── 16. Configuration / viscosity (Putty+Light Body kit ≠ Light Body alone) ──
   if (hasConfigurationConflict(search, found)) return false;
+
+  // ── 16b. Pack specification (4×0.25cc ≠ 6×0.5cc — different product SKUs) ──
+  if (hasPackSpecConflict(search, found)) return false;
 
   // ── 17. Sufficient keyword overlap (word boundary) ──
   const matchedWords = searchWords.filter((w) => wordBoundaryMatch(found, w));
@@ -363,11 +366,16 @@ function hasIncompatibleTypes(search: string, found: string): boolean {
 function hasCategoryExclusion(search: string, found: string): boolean {
   for (const [groupA, groupB] of CATEGORY_EXCLUSIONS) {
     const searchHasA = groupA.some((w) => wordBoundaryMatch(search, w));
-    const foundHasB = groupB.some((w) => wordBoundaryMatch(found, w));
-    if (searchHasA && foundHasB) return true;
-    const foundHasA = groupA.some((w) => wordBoundaryMatch(found, w));
     const searchHasB = groupB.some((w) => wordBoundaryMatch(search, w));
-    if (foundHasA && searchHasB) return true;
+    const foundHasA = groupA.some((w) => wordBoundaryMatch(found, w));
+    const foundHasB = groupB.some((w) => wordBoundaryMatch(found, w));
+
+    // Only exclude when categories are CLEANLY opposite — one side is
+    // A-only, the other is B-only. When a name legitimately spans both
+    // lexicons (e.g. "Bracket Positioning Height Gauge" is a gauge FOR
+    // brackets), don't trigger — it's a single product, not a cross-match.
+    if (searchHasA && !searchHasB && foundHasB && !foundHasA) return true;
+    if (searchHasB && !searchHasA && foundHasA && !foundHasB) return true;
   }
   return false;
 }
@@ -481,6 +489,16 @@ function hasTechniqueConflict(search: string, found: string): boolean {
   const sT = techs.filter((t) => wordBoundaryMatch(search, t));
   const fT = techs.filter((t) => wordBoundaryMatch(found, t));
   return sT.length > 0 && fT.length > 0 && !sT.some((t) => fT.includes(t));
+}
+
+function hasPackSpecConflict(search: string, found: string): boolean {
+  const sSpec = extractVariantInfo(search).packSpec;
+  const fSpec = extractVariantInfo(found).packSpec;
+  // Both sides declare a pack spec, and they don't match (different count or
+  // total volume). Only reject when BOTH sides explicitly declare — if either
+  // side is silent on pack, we can't know, so we don't block the match.
+  if (!sSpec || !fSpec) return false;
+  return !packSpecsMatch(sSpec, fSpec);
 }
 
 function hasToothNumberConflict(search: string, found: string): boolean {

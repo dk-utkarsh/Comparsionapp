@@ -12,10 +12,6 @@ export default function ComparePage() {
   const [results, setResults] = useState<ComparisonResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
-  const [products, setProducts] = useState<string[]>([]);
-  const [productStatuses, setProductStatuses] = useState<
-    ("pending" | "loading" | "done" | "error")[]
-  >([]);
   const fetchedRef = useRef(false);
 
   useEffect(() => {
@@ -30,57 +26,58 @@ export default function ComparePage() {
 
     const query = JSON.parse(raw);
     const productList: string[] = query.products;
-    setProducts(productList);
     setProgress({ current: 0, total: productList.length });
-    setProductStatuses(productList.map(() => "pending"));
 
     const fetchResults = async () => {
-      const allResults: ComparisonResult[] = [];
+      // Preserve original order even when requests finish out of order.
+      const slots: (ComparisonResult | undefined)[] = new Array(productList.length);
+      const queue = productList.map((name, idx) => ({ name, idx }));
+      let completed = 0;
 
-      for (let i = 0; i < productList.length; i++) {
-        setProductStatuses((prev) => {
-          const next = [...prev];
-          next[i] = "loading";
-          return next;
-        });
+      const emitSnapshot = () => {
+        const inOrder = slots.filter(
+          (r): r is ComparisonResult => r !== undefined
+        );
+        setResults(inOrder);
+        setProgress({ current: completed, total: productList.length });
+      };
 
-        try {
-          const response = await fetch("/api/scrape", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ productName: productList[i] }),
-          });
+      const worker = async () => {
+        while (queue.length > 0) {
+          const item = queue.shift();
+          if (!item) return;
 
-          if (!response.ok) throw new Error("Scrape failed");
+          try {
+            const response = await fetch("/api/scrape", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ productName: item.name }),
+            });
+            if (!response.ok) throw new Error("Scrape failed");
+            slots[item.idx] = await response.json();
+          } catch {
+            slots[item.idx] = {
+              id: crypto.randomUUID(),
+              searchTerm: item.name,
+              dentalkart: null,
+              competitors: {},
+              alerts: [],
+              discovered: [],
+              createdAt: new Date().toISOString(),
+            };
+          }
 
-          const result: ComparisonResult = await response.json();
-          allResults.push(result);
-          setResults([...allResults]);
-          setProgress({ current: i + 1, total: productList.length });
-          setProductStatuses((prev) => {
-            const next = [...prev];
-            next[i] = "done";
-            return next;
-          });
-        } catch {
-          allResults.push({
-            id: crypto.randomUUID(),
-            searchTerm: productList[i],
-            dentalkart: null,
-            competitors: {},
-            alerts: [],
-            discovered: [],
-            createdAt: new Date().toISOString(),
-          });
-          setResults([...allResults]);
-          setProgress({ current: i + 1, total: productList.length });
-          setProductStatuses((prev) => {
-            const next = [...prev];
-            next[i] = "error";
-            return next;
-          });
+          completed += 1;
+          emitSnapshot();
         }
-      }
+      };
+
+      const CONCURRENCY = 4;
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, productList.length) }, () =>
+          worker()
+        )
+      );
 
       setLoading(false);
     };
@@ -130,14 +127,11 @@ export default function ComparePage() {
     // Reset state and re-fetch
     setResults([]);
     setLoading(true);
-    setProducts([productName]);
-    setProductStatuses(["pending"]);
     setProgress({ current: 0, total: 1 });
     fetchedRef.current = false;
 
     // Trigger re-fetch
     const fetchSingle = async () => {
-      setProductStatuses(["loading"]);
       try {
         const response = await fetch("/api/scrape", {
           method: "POST",
@@ -149,7 +143,6 @@ export default function ComparePage() {
 
         const result: ComparisonResult = await response.json();
         setResults([result]);
-        setProductStatuses(["done"]);
       } catch {
         setResults([
           {
@@ -162,7 +155,6 @@ export default function ComparePage() {
             createdAt: new Date().toISOString(),
           },
         ]);
-        setProductStatuses(["error"]);
       }
       setProgress({ current: 1, total: 1 });
       setLoading(false);
@@ -181,93 +173,38 @@ export default function ComparePage() {
       <Header onSearch={handleNewSearch} loading={loading} />
 
       <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6">
-        {/* Progress Section */}
-        {loading && (
-          <div className="mb-6 bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {/* Progress header */}
-            <div className="px-5 py-4 border-b border-gray-100">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center">
-                    <svg
-                      className="text-teal animate-spin"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                    >
-                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-text">
-                      Comparing product {progress.current + (progress.current < progress.total ? 1 : 0)} of{" "}
-                      {progress.total}...
-                    </div>
-                    <div className="text-xs text-slate-muted">
-                      Scraping live prices from all platforms
-                    </div>
-                  </div>
-                </div>
-                <span className="text-sm font-bold text-teal">{percentage}%</span>
+        {/* Slim progress strip — only while still fetching */}
+        {loading && progress.total > 0 && (
+          <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 mb-4 bg-mint/95 backdrop-blur-sm">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 py-2.5 flex items-center gap-4">
+              <svg
+                className="text-teal animate-spin shrink-0"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <div className="text-sm font-semibold text-slate-text whitespace-nowrap">
+                {progress.current}
+                <span className="text-slate-muted font-medium"> / {progress.total}</span>
               </div>
-
-              {/* Progress bar */}
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-teal to-accent rounded-full transition-all duration-700 ease-out"
+                  className="h-full bg-gradient-to-r from-teal to-accent rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${percentage}%` }}
                 />
               </div>
-            </div>
-
-            {/* Product checklist */}
-            {products.length > 1 && (
-              <div className="px-5 py-3 max-h-48 overflow-y-auto">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                  {products.map((product, i) => {
-                    const status = productStatuses[i];
-                    return (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs ${
-                          status === "done"
-                            ? "bg-emerald-50 text-success"
-                            : status === "loading"
-                              ? "bg-blue-50 text-accent"
-                              : status === "error"
-                                ? "bg-red-50 text-danger"
-                                : "text-slate-light"
-                        }`}
-                      >
-                        {status === "done" && (
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                        {status === "loading" && (
-                          <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                          </svg>
-                        )}
-                        {status === "error" && (
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" x2="6" y1="6" y2="18" />
-                            <line x1="6" x2="18" y1="6" y2="18" />
-                          </svg>
-                        )}
-                        {status === "pending" && (
-                          <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-200" />
-                        )}
-                        <span className="truncate">{product}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className="text-xs font-bold text-teal tabular-nums shrink-0">
+                {percentage}%
               </div>
-            )}
+              <div className="hidden sm:block text-xs text-slate-muted shrink-0">
+                Live — results appear below as they arrive
+              </div>
+            </div>
           </div>
         )}
 
@@ -275,23 +212,26 @@ export default function ComparePage() {
         {results.length > 0 && (
           <>
             {/* Summary Stats */}
-            <div className="mb-6">
+            <div className="mb-4">
               <SummaryStats results={results} />
             </div>
 
             {/* Actions bar */}
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-text">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold text-slate-text">
                 Comparison Results
-                {loading && (
-                  <span className="ml-2 text-xs font-normal text-slate-muted">
-                    (updating as results come in...)
-                  </span>
-                )}
+                <span className="ml-2 text-xs font-medium text-slate-muted">
+                  {results.length}
+                  {progress.total > 0 && progress.total !== results.length
+                    ? ` of ${progress.total}`
+                    : ""}{" "}
+                  products
+                </span>
               </h2>
               <button
                 onClick={handleExport}
-                className="flex items-center gap-2 px-4 py-2 bg-teal text-white rounded-lg font-semibold text-sm hover:bg-teal-dark transition-colors shadow-sm"
+                disabled={loading && results.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-teal text-white rounded-lg font-semibold text-sm hover:bg-teal-dark transition-colors shadow-sm disabled:opacity-50"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />

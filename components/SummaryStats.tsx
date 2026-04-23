@@ -92,20 +92,20 @@ export default function SummaryStats({ results }: SummaryStatsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
       {stats.map((stat) => (
         <div
           key={stat.label}
-          className="bg-white rounded-xl border border-gray-100 p-4 flex items-start gap-3"
+          className="bg-white rounded-lg border border-gray-100 px-3 py-2.5 flex items-center gap-2.5"
         >
-          <div className={`${stat.bg} ${stat.color} p-2 rounded-lg shrink-0`}>
+          <div className={`${stat.bg} ${stat.color} p-1.5 rounded-md shrink-0`}>
             {stat.icon}
           </div>
           <div className="min-w-0">
-            <div className={`text-2xl font-extrabold ${stat.color}`}>
+            <div className={`text-xl font-extrabold leading-tight ${stat.color}`}>
               {stat.value}
             </div>
-            <div className="text-xs text-slate-muted font-medium mt-0.5">
+            <div className="text-[11px] text-slate-muted font-medium">
               {stat.label}
             </div>
           </div>

@@ -22,11 +22,9 @@ import { competitors } from "./competitors";
 /** Domains we already scrape via dedicated scrapers — skip these */
 const KNOWN_DOMAINS = new Set([
   "pinkblue.in",
-  "dentganga.com",
   "medikabazaar.com",
   "oralkart.com",
   "dentmark.com",
-  "confidentonline.com",
   "bestdentaldeals.in",
   "nexusmedo.com",
   "orikamhealthcare.com",
@@ -36,9 +34,24 @@ const KNOWN_DOMAINS = new Set([
 
 /** Domains to always exclude — marketplaces, social media, etc. */
 const EXCLUDED_DOMAINS = new Set([
+  // Retired competitors — historically scraped but removed because they rarely
+  // carry products we're looking for. Blocked from web discovery to avoid noise.
+  "dentganga.com",
+  "confidentonline.com",
+  // Marketplaces that aggressively block scraping — budget-waste, never produce results
   "amazon.in",
   "amazon.com",
   "flipkart.com",
+  "ebay.com",
+  "ebay.in",
+  "made-in-china.com",
+  // Directories (not actual product pages with prices)
+  "indiamart.com",
+  "tradeindia.com",
+  "justdial.com",
+  "snapdeal.com",
+  "meesho.com",
+  // Social media / video / discussion — never product pages
   "youtube.com",
   "facebook.com",
   "instagram.com",
@@ -48,11 +61,6 @@ const EXCLUDED_DOMAINS = new Set([
   "pinterest.com",
   "reddit.com",
   "quora.com",
-  "snapdeal.com",
-  "meesho.com",
-  "indiamart.com",
-  "tradeindia.com",
-  "justdial.com",
 ]);
 
 /** URL path patterns that indicate non-product pages */

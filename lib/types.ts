@@ -1,3 +1,12 @@
+export interface ProductVariant {
+  name: string;
+  sku: string;
+  price: number;
+  mrp: number;
+  packSize: number;
+  unitPrice: number;
+}
+
 export interface ProductData {
   name: string;
   url: string;
@@ -12,6 +21,8 @@ export interface ProductData {
   packSize: number; // detected pack quantity (1 = single unit)
   unitPrice: number; // price per single unit
   sku?: string; // product SKU code (e.g., VP2382, S5083)
+  variants?: ProductVariant[]; // per-SKU variants when the listing is configurable
+  selectedVariantSku?: string; // which variant is currently reflected in `price` / `name`
 }
 
 export type MatchVerdict = "confirmed" | "possible" | "variant" | "rejected";
