@@ -33,6 +33,46 @@ export const competitors: CompetitorConfig[] = [
     baseUrl: "https://www.dentmark.com",
     domain: "dentmark.com",
   },
+  {
+    id: "metroorthodontics",
+    name: "Metro Ortho",
+    color: "#0ea5e9",
+    bgLight: "#e0f2fe",
+    baseUrl: "https://www.metroorthodontics.in",
+    domain: "metroorthodontics.in",
+  },
+  {
+    id: "shop4smile",
+    name: "Shop4Smile",
+    color: "#14b8a6",
+    bgLight: "#ccfbf1",
+    baseUrl: "https://shop4smile.in",
+    domain: "shop4smile.in",
+  },
+  {
+    id: "surgicalmart",
+    name: "SurgicalMart",
+    color: "#6366f1",
+    bgLight: "#e0e7ff",
+    baseUrl: "https://surgicalmart.com",
+    domain: "surgicalmart.com",
+  },
+  {
+    id: "smilestream",
+    name: "SmileStream",
+    color: "#d946ef",
+    bgLight: "#fae8ff",
+    baseUrl: "https://smilestreamsolutions.com",
+    domain: "smilestreamsolutions.com",
+  },
+  {
+    id: "dentaid",
+    name: "Dentaid",
+    color: "#f59e0b",
+    bgLight: "#fef3c7",
+    baseUrl: "https://dentaiddevices.com",
+    domain: "dentaiddevices.com",
+  },
 ];
 
 export const dentalkartConfig = {

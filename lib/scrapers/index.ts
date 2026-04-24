@@ -20,6 +20,11 @@ import { searchPinkblue } from "./pinkblue";
 import { searchMedikabazar } from "./medikabazar";
 import { searchOralkart } from "./oralkart";
 import { searchDentmark } from "./dentmark";
+import { searchMetroOrthodontics } from "./metroorthodontics";
+import { searchShop4Smile } from "./shop4smile";
+import { searchSurgicalmart } from "./surgicalmart";
+import { searchSmileStream } from "./smilestream";
+import { searchDentaid } from "./dentaid";
 import { scrapeProductPage } from "./page-scraper";
 import { discoverOnWeb } from "../web-discovery";
 import { randomUUID } from "crypto";
@@ -54,6 +59,11 @@ const scraperMap: Record<
   medikabazar: searchMedikabazar,
   oralkart: searchOralkart,
   dentmark: searchDentmark,
+  metroorthodontics: searchMetroOrthodontics,
+  shop4smile: searchShop4Smile,
+  surgicalmart: searchSurgicalmart,
+  smilestream: searchSmileStream,
+  dentaid: searchDentaid,
 };
 
 /**

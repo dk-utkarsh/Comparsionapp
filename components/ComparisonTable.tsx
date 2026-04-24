@@ -19,6 +19,12 @@ type SortKey =
   | "pinkblue"
   | "medikabazar"
   | "oralkart"
+  | "dentmark"
+  | "metroorthodontics"
+  | "shop4smile"
+  | "surgicalmart"
+  | "smilestream"
+  | "dentaid"
   | "bestDeal";
 
 type SortDir = "asc" | "desc";
@@ -143,6 +149,12 @@ export default function ComparisonTable({ results, onRescrape }: ComparisonTable
         case "pinkblue":
         case "medikabazar":
         case "oralkart":
+        case "dentmark":
+        case "metroorthodontics":
+        case "shop4smile":
+        case "surgicalmart":
+        case "smilestream":
+        case "dentaid":
           cmp = getPriceForSort(rA, sortKey) - getPriceForSort(rB, sortKey);
           break;
         case "bestDeal": {

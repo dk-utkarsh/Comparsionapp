@@ -13,6 +13,8 @@ interface WooProduct {
     regular_price?: string;
     sale_price?: string;
     currency_minor_unit?: number;
+    currency_code?: string;
+    currency_symbol?: string;
   };
   images?: Array<{ src?: string; thumbnail?: string }>;
   is_in_stock?: boolean;
@@ -42,8 +44,17 @@ export function createWooScraper(
 
       return products
         .slice(0, 10)
-        .map((p) => mapWooProduct(p, source, minorUnit))
-        .filter((p) => p.price > 0);
+        .flatMap((p) => {
+          // Only surface INR-priced products. Indian stores occasionally run
+          // a WooCommerce instance on USD (e.g. US-based sellers like
+          // surgicalmart.com) — those prices would mislead an INR comparison.
+          const code = (p.prices?.currency_code || "").toUpperCase();
+          const sym = p.prices?.currency_symbol || "";
+          const isINR = code === "INR" || sym === "₹" || sym === "Rs" || sym === "Rs.";
+          if (!isINR) return [];
+          const mapped = mapWooProduct(p, source, minorUnit);
+          return mapped.price > 0 ? [mapped] : [];
+        });
     } catch {
       return [];
     }

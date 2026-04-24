@@ -34,14 +34,16 @@ const EXCLUDED_SEARCH_HOSTS = [
  * in half across the product corpus we've tested.
  */
 export async function webSearch(query: string): Promise<string[]> {
-  const [sp, ddg] = await Promise.allSettled([
+  const [sp, ddg, g] = await Promise.allSettled([
     searchStartpage(query),
     searchDuckDuckGo(query),
+    searchGoogle(query),
   ]);
 
   const all: string[] = [];
   if (sp.status === "fulfilled") all.push(...sp.value);
   if (ddg.status === "fulfilled") all.push(...ddg.value);
+  if (g.status === "fulfilled") all.push(...g.value);
 
   // Dedupe on host+path so tracking-param variants collapse.
   const seen = new Set<string>();
@@ -71,6 +73,58 @@ async function searchStartpage(query: string): Promise<string[]> {
     });
     if (!response.ok) return [];
     return extractLinksFromHtml(await response.text());
+  } catch {
+    return [];
+  }
+}
+
+async function searchGoogle(query: string): Promise<string[]> {
+  try {
+    const encoded = encodeURIComponent(query);
+    // `num=20&hl=en&gl=in` biases for Indian results. `&pws=0` disables
+    // personalization. Google aggressively blocks scraping from datacenter
+    // IPs — this works intermittently and is best-effort, not authoritative.
+    const url = `https://www.google.com/search?q=${encoded}&num=20&hl=en&gl=in&pws=0`;
+    const response = await fetch(url, {
+      headers: {
+        ...sharedHeaders(),
+        // Real browsers send these; Google's bot-detection keys off them.
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return [];
+    const html = await response.text();
+
+    // Google-specific extraction: result anchors live inside divs with the
+    // `yuRUbf` class (stable since 2021). Fallback to scanning all anchors
+    // if Google mutates the class name.
+    const $ = cheerio.load(html);
+    const raw: string[] = [];
+    $("div.yuRUbf a[href], .tF2Cxc a[href]").each((_, el) => {
+      const href = $(el).attr("href");
+      if (href && href.startsWith("http")) raw.push(href);
+    });
+    // Broader fallback — Google sometimes wraps external links via /url?q=...
+    if (raw.length === 0) {
+      $("a[href^='/url?q=']").each((_, el) => {
+        const href = $(el).attr("href") || "";
+        const m = href.match(/[?&]q=([^&]+)/);
+        if (m) {
+          try {
+            raw.push(decodeURIComponent(m[1]));
+          } catch {
+            // ignore
+          }
+        }
+      });
+    }
+
+    return filterAndNormalize(raw);
   } catch {
     return [];
   }
