@@ -187,11 +187,23 @@ export default function ComparisonTable({ results, onRescrape }: ComparisonTable
     );
   };
 
+  // Only show competitor columns that returned at least one price across the
+  // current batch. Hides perma-empty sites (e.g. ones that block Vercel's
+  // datacenter IPs) so the table doesn't drown in N/A.
+  // Caveat: when there's only one row, we still show every site so users see
+  // we checked them — single-product compares shouldn't shrink the grid.
+  const visibleCompetitors = useMemo(() => {
+    if (results.length <= 1) return competitors;
+    return competitors.filter((c) =>
+      results.some((r) => r.competitors[c.id]?.price)
+    );
+  }, [results]);
+
   const columnHeaders: { key: SortKey; label: string; className?: string }[] = [
     { key: "index", label: "#", className: "w-12" },
     { key: "name", label: "Product Name", className: "min-w-[200px]" },
     { key: "dentalkart", label: "Dentalkart" },
-    ...competitors.map((c) => ({ key: c.id as SortKey, label: c.name })),
+    ...visibleCompetitors.map((c) => ({ key: c.id as SortKey, label: c.name })),
     { key: "bestDeal", label: "Best Deal", className: "min-w-[180px]" },
   ];
 
@@ -291,8 +303,10 @@ export default function ComparisonTable({ results, onRescrape }: ComparisonTable
                         />
                       </td>
 
-                      {/* Competitor Prices */}
-                      {competitors.map((comp) => {
+                      {/* Competitor Prices — visibleCompetitors keeps the
+                          headers and body in lock-step when empty columns
+                          are hidden. */}
+                      {visibleCompetitors.map((comp) => {
                         const product = result.competitors[comp.id];
                         return (
                           <td key={comp.id} className="px-4 py-3 whitespace-nowrap">
